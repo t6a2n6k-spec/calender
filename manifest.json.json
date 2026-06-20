@@ -1,0 +1,17 @@
+{
+  "name": "iCalendar WebApp",
+  "short_name": "行事曆",
+  "description": "我的高質感桌面行事曆與時間管理助理",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0071e3",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2862/2862803.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

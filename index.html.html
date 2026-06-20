@@ -1,0 +1,2669 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+    <link rel="manifest">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- 讓 iOS 可以加到主畫面，看起來像個獨立 App -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>我的桌面行事曆儀表板</title>
+    <!-- 引入 Tailwind CSS CDN 用於極速高質感排版 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // 設定 Tailwind 支持 dark mode 類名切換
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        appleBlue: '#0071e3',
+                        appleGreen: '#34c759',
+                        appleRed: '#ff3b30',
+                        applePurple: '#af52de',
+                        appleYellow: '#ff9500',
+                        q1: '#ff4d4f', // 急迫且重要
+                        q2: '#34c759', // 不急迫但重要
+                        q3: '#ff9f0a', // 急迫但不重要
+                        q4: '#8e8e93', // 不急迫也不重要
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 隱藏滾動條以獲得更極簡的體驗，但保留滾動功能 */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #3a3a3c;
+            border-radius: 10px;
+        }
+        .light .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #d1d1d6;
+            border-radius: 10px;
+        }
+        
+        * {
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        /* 時間軸與拖曳區塊的平滑過渡 */
+        .timeline-block {
+            transition: all 0.2s ease-in-out;
+        }
+        .timeline-block:hover {
+            transform: scale(1.02);
+            z-index: 10;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        /* 拖曳時的視覺反饋 */
+        .dragging {
+            opacity: 0.5;
+            transform: scale(1.05);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+        .dropzone.drag-over {
+            background-color: rgba(0, 113, 227, 0.1);
+            border-color: #0071e3;
+        }
+        .dark .dropzone.drag-over {
+            background-color: rgba(0, 113, 227, 0.2);
+        }
+        
+        /* 習慣網格的 Checkbox 動畫 */
+        .habit-cell {
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .habit-cell:active {
+            transform: scale(0.85);
+        }
+    </style>
+</head>
+<body class="bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 h-screen w-screen transition-colors duration-300 overflow-hidden font-sans">
+
+    <!-- 主 App 容器：100% 滿版橫向展開的電腦桌面級 Web App -->
+    <div id="appContainer" class="w-full h-full flex flex-col justify-between overflow-hidden relative transition-all duration-300">
+        
+        <!-- 頂部導航欄 -->
+        <header class="h-14 border-b border-slate-100 dark:border-zinc-800/80 px-4 sm:px-6 flex items-center justify-between bg-white/85 dark:bg-zinc-900/85 backdrop-blur-md z-30 flex-shrink-0">
+            <div class="flex items-center gap-2 sm:gap-3">
+                <!-- 漢堡選單按鈕 (開啟側邊欄) -->
+                <button id="sidebarToggleBtn" class="p-2 -ml-2 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-300 transition-colors" title="開啟選單">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </button>
+                
+                <span class="w-3 h-3 rounded-full bg-appleBlue animate-pulse shadow-[0_0_8px_rgba(0,113,227,0.6)] ml-1"></span>
+                <span class="text-xs sm:text-sm font-bold tracking-wider text-slate-500 dark:text-zinc-400 uppercase" id="navAppName">iCalendar WebApp</span>
+            </div>
+            
+            <div class="flex items-center gap-1 sm:gap-2 relative">
+                <button id="toolsBtn" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 transition-colors" title="備份管理">
+                    <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                </button>
+                
+                <div id="toolsDropdown" class="hidden absolute right-10 top-12 w-48 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-2xl z-50 py-1 text-left text-xs sm:text-sm">
+                    <button id="exportBtn" class="w-full px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-zinc-700/50 flex items-center gap-2 transition-colors">
+                        <span>📤</span> 匯出資料 (JSON)
+                    </button>
+                    <label class="w-full px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-zinc-700/50 flex items-center gap-2 cursor-pointer transition-colors">
+                        <span>📥</span> 匯入資料
+                        <input type="file" id="importFile" class="hidden" accept=".json">
+                    </label>
+                    <hr class="border-slate-100 dark:border-zinc-700 my-1">
+                    <button id="clearAllBtn" class="w-full px-4 py-2.5 text-appleRed hover:bg-red-50 dark:hover:bg-red-950/20 flex items-center gap-2 transition-colors">
+                        <span>⚠️</span> 清空所有資料
+                    </button>
+                </div>
+
+                <button id="themeToggleBtn" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 transition-colors">
+                    <svg id="sunIcon" class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
+                    <svg id="moonIcon" class="w-5 h-5 sm:w-6 sm:h-6 hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- 中間內容：可切換的視圖區域 -->
+        <main class="flex-1 overflow-hidden relative z-10">
+            
+            <!-- 【頁面一：月曆視圖 (Calendar View)】 -->
+            <div id="calendarView" class="absolute inset-0 flex flex-col lg:flex-row p-4 sm:p-6 lg:p-8 gap-6 overflow-hidden transition-transform duration-300 ease-out bg-slate-50/30 dark:bg-zinc-950">
+                
+                <!-- 左半邊：月曆主體 (佔 2/3) -->
+                <div class="flex-1 lg:w-2/3 flex flex-col h-full overflow-y-auto custom-scrollbar pr-1 lg:pr-4">
+                    <div class="flex items-center justify-between mb-6 flex-shrink-0">
+                        <div>
+                            <h1 class="text-2xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white" id="monthDisplay">2026 年 6 月</h1>
+                            <p id="todaySubtitle" class="text-xs sm:text-sm text-slate-400 dark:text-zinc-500 font-medium mt-1">今天：2026年6月19日</p>
+                        </div>
+                        <div class="flex items-center gap-1 sm:gap-2">
+                            <button id="globalAddEventBtn" class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl border border-appleBlue bg-appleBlue text-white hover:bg-blue-600 transition-colors shadow-sm flex items-center gap-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                                <span class="hidden sm:inline">新增</span>
+                            </button>
+                            <div class="w-px h-6 bg-slate-200 dark:bg-zinc-700 mx-1 sm:mx-2"></div>
+                            
+                            <button id="prevMonthBtn" class="p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors bg-white dark:bg-zinc-900">
+                                <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+                            </button>
+                            <button id="todayBtn" class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl border border-slate-200 dark:border-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors bg-white dark:bg-zinc-900 shadow-sm">今天</button>
+                            <button id="nextMonthBtn" class="p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors bg-white dark:bg-zinc-900">
+                                <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-7 gap-1.5 text-center text-xs sm:text-sm font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex-shrink-0">
+                        <div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>
+                    </div>
+
+                    <div class="grid grid-cols-7 gap-1.5 sm:gap-3 flex-shrink-0 mb-4" id="calendarGrid">
+                        <!-- 由 JS 自動繪製 -->
+                    </div>
+                </div>
+
+                <!-- 右半邊：事件快速預覽面板 (佔 1/3) -->
+                <div class="lg:w-1/3 flex flex-col h-full overflow-y-auto custom-scrollbar border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-zinc-800 pt-6 lg:pt-0 lg:pl-8">
+                    <div class="flex flex-col mb-4 flex-shrink-0 sticky top-0 bg-slate-50/90 dark:bg-zinc-950/90 backdrop-blur-md z-10 pb-2">
+                        <span class="text-xs sm:text-sm font-bold text-appleBlue tracking-wider flex items-center gap-1.5 uppercase mb-1">
+                            <span class="w-2 h-2 bg-appleBlue rounded-full animate-pulse"></span>
+                            SELECTED PREVIEW
+                        </span>
+                        <h2 id="quickPreviewTitle" class="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white">6月19日 的行程</h2>
+                        <p class="text-xs text-slate-400 dark:text-zinc-500 mt-1.5">💡 快速連點兩下日期格子，即可進入完整日程表並編輯時間軸。</p>
+                    </div>
+                    
+                    <div id="quickPreviewList" class="flex-1 flex flex-col space-y-3 pb-6">
+                        <!-- 由 JS 動態注入該日的事件 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 【頁面二：當週視圖 (Week View)】 -->
+            <div id="weekView" class="absolute inset-0 flex flex-col p-4 sm:p-6 lg:p-8 gap-4 overflow-hidden translate-x-full transition-transform duration-300 ease-out hidden bg-slate-50/30 dark:bg-zinc-950">
+                <div class="flex items-center justify-between mb-2 flex-shrink-0">
+                    <div>
+                        <h1 class="text-xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white" id="weekDisplay">2026年6月15日 - 6月21日</h1>
+                        <p id="weekTodaySubtitle" class="text-xs sm:text-sm text-slate-400 dark:text-zinc-500 font-medium mt-1">今天：2026年6月19日</p>
+                    </div>
+                    <div class="flex items-center gap-1 sm:gap-2">
+                        <button id="globalAddEventBtnWeek" class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl border border-appleBlue bg-appleBlue text-white hover:bg-blue-600 transition-colors shadow-sm flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                            <span class="hidden sm:inline">新增</span>
+                        </button>
+                        <div class="w-px h-6 bg-slate-200 dark:bg-zinc-700 mx-1 sm:mx-2"></div>
+                        <button id="prevWeekBtn" class="p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors bg-white dark:bg-zinc-900">
+                            <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+                        </button>
+                        <button id="todayWeekBtn" class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl border border-slate-200 dark:border-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors bg-white dark:bg-zinc-900 shadow-sm">本週</button>
+                        <button id="nextWeekBtn" class="p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors bg-white dark:bg-zinc-900">
+                            <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex-1 min-h-0 flex gap-2 sm:gap-4 overflow-x-auto custom-scrollbar pb-2 snap-x snap-mandatory" id="weekGrid">
+                    <!-- 由 JS 動態繪製 7 個直欄 -->
+                </div>
+            </div>
+
+            <!-- 【頁面三：當日雙軌時間軸 & 四象限視圖 (Agenda View)】 -->
+            <div id="agendaView" class="absolute inset-0 flex flex-col lg:flex-row p-4 sm:p-6 lg:p-8 gap-6 overflow-hidden translate-x-full transition-transform duration-300 ease-out hidden bg-slate-50/30 dark:bg-zinc-950">
+                
+                <!-- 左半邊 (2/3)：雙軌時間軸主體 -->
+                <div class="flex-1 lg:w-2/3 flex flex-col h-full overflow-hidden pr-1 lg:pr-4">
+                    <div class="flex items-center justify-between mb-4 flex-shrink-0 z-10 w-full">
+                        <div class="flex flex-col">
+                            <span class="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">TIMELINE & PLANNING</span>
+                            <h2 id="focusedDateLabel" class="text-xl sm:text-3xl font-extrabold text-slate-900 dark:text-white mt-0.5">6 月 19 日的日程</h2>
+                        </div>
+                        <button id="backToCalendarBtn" class="px-4 py-2 sm:px-5 sm:py-2.5 bg-white hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 rounded-xl text-xs sm:text-sm font-bold text-appleBlue transition-all flex items-center gap-1.5 border border-slate-200 dark:border-zinc-800 shadow-sm hover:shadow">
+                            <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+                            返回月曆
+                        </button>
+                    </div>
+
+                    <div class="flex items-center text-xs sm:text-sm font-bold text-slate-400 dark:text-zinc-500 pb-3 border-b border-slate-200 dark:border-zinc-800 flex-shrink-0 z-10 w-full">
+                        <div class="w-14 sm:w-20 text-center shrink-0">時刻</div>
+                        <div class="flex-1 text-center text-appleBlue">🎯 理想預定</div>
+                        <div class="w-[2px] h-4 bg-slate-300 dark:bg-zinc-700 rounded-full mx-2"></div>
+                        <div class="flex-1 text-center text-appleGreen">✅ 實際執行</div>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto custom-scrollbar relative bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-sm mt-2 w-full" id="eventListContainer">
+                        <div id="timelineWrapper" class="relative w-full h-[1008px] mt-4 mb-6">
+                            <!-- JS 繪製 -->
+                        </div>
+                    </div>
+
+                    <!-- ⭐ 雙按鈕設計 (新增規劃 / 1-4-7-14 記憶排程) -->
+                    <div class="w-full flex-shrink-0 mt-3 flex gap-2">
+                        <button id="openAddModalBtn" class="flex-[2] bg-appleBlue text-white font-bold py-3.5 sm:py-4 rounded-2xl hover:bg-blue-600 transition-all shadow-lg shadow-appleBlue/30 flex items-center justify-center gap-2 text-sm sm:text-base z-10 hover:-translate-y-0.5 active:translate-y-0">
+                            <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                            新增時間區塊規劃
+                        </button>
+                        <button id="openStudyPlanBtn" class="flex-1 bg-indigo-500 text-white font-bold py-3.5 sm:py-4 rounded-2xl hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-500/30 flex items-center justify-center gap-2 text-sm sm:text-base z-10 hover:-translate-y-0.5 active:translate-y-0" title="1/4/7/14 記憶法排程">
+                            <span class="text-lg">🧠</span> 記憶排程
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 右半邊 (1/3)：四象限、任務池與評分區 -->
+                <div class="lg:w-1/3 flex flex-col h-full overflow-hidden border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-zinc-800 pt-6 lg:pt-0 lg:pl-6 space-y-4">
+                    
+                    <div class="flex-[2] flex flex-col min-h-0">
+                        <div class="flex items-center justify-between mb-2 flex-shrink-0">
+                            <h3 class="text-sm font-extrabold text-slate-800 dark:text-zinc-200 flex items-center gap-1.5">
+                                🧭 艾森豪矩陣 (四象限)
+                            </h3>
+                            <span class="text-[10px] text-slate-400 bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md">拖曳分類任務</span>
+                        </div>
+                        <div class="flex-1 min-h-0 grid grid-cols-2 grid-rows-2 gap-2 relative bg-white dark:bg-zinc-900 rounded-2xl p-2 border border-slate-200 dark:border-zinc-800 shadow-sm">
+                            <div class="absolute inset-0 m-auto w-full h-[2px] bg-slate-100 dark:bg-zinc-800/80 pointer-events-none"></div>
+                            <div class="absolute inset-0 m-auto h-full w-[2px] bg-slate-100 dark:bg-zinc-800/80 pointer-events-none"></div>
+                            
+                            <div id="q1" class="dropzone min-h-0 flex flex-col bg-red-50/50 dark:bg-red-900/10 rounded-xl p-2 border-2 border-transparent transition-all overflow-y-auto custom-scrollbar" data-quadrant="q1">
+                                <span class="text-[10px] font-bold text-red-500 mb-1 sticky top-0 bg-red-50/80 dark:bg-zinc-900/80 backdrop-blur z-10 rounded flex-shrink-0">急迫又重要</span>
+                                <div class="task-container flex-1 flex flex-col gap-1.5 pb-1"></div>
+                            </div>
+                            <div id="q2" class="dropzone min-h-0 flex flex-col bg-blue-50/50 dark:bg-blue-900/10 rounded-xl p-2 border-2 border-transparent transition-all overflow-y-auto custom-scrollbar" data-quadrant="q2">
+                                <span class="text-[10px] font-bold text-blue-500 mb-1 sticky top-0 bg-blue-50/80 dark:bg-zinc-900/80 backdrop-blur z-10 rounded flex-shrink-0">不急迫但重要</span>
+                                <div class="task-container flex-1 flex flex-col gap-1.5 pb-1"></div>
+                            </div>
+                            <div id="q3" class="dropzone min-h-0 flex flex-col bg-orange-50/50 dark:bg-orange-900/10 rounded-xl p-2 border-2 border-transparent transition-all overflow-y-auto custom-scrollbar" data-quadrant="q3">
+                                <span class="text-[10px] font-bold text-orange-500 mb-1 sticky top-0 bg-orange-50/80 dark:bg-zinc-900/80 backdrop-blur z-10 rounded flex-shrink-0">急迫但不重要</span>
+                                <div class="task-container flex-1 flex flex-col gap-1.5 pb-1"></div>
+                            </div>
+                            <div id="q4" class="dropzone min-h-0 flex flex-col bg-slate-50 dark:bg-zinc-800/30 rounded-xl p-2 border-2 border-transparent transition-all overflow-y-auto custom-scrollbar" data-quadrant="q4">
+                                <span class="text-[10px] font-bold text-slate-500 mb-1 sticky top-0 bg-slate-50/80 dark:bg-zinc-900/80 backdrop-blur z-10 rounded flex-shrink-0">不急迫又不必</span>
+                                <div class="task-container flex-1 flex flex-col gap-1.5 pb-1"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 flex flex-col min-h-0">
+                        <h3 class="text-sm font-extrabold text-slate-800 dark:text-zinc-200 mb-2 flex items-center gap-1.5 flex-shrink-0">
+                            📝 今日待辦清單
+                        </h3>
+                        <div class="flex gap-2 mb-2 flex-shrink-0">
+                            <input type="text" id="newTaskInput" placeholder="輸入任務，按 Enter 新增..." class="flex-1 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-appleBlue transition-colors shadow-sm">
+                            <button id="addTaskBtn" class="bg-appleBlue text-white rounded-xl px-3 py-1.5 text-xs font-bold hover:bg-blue-600 transition-colors shadow-sm">+</button>
+                        </div>
+                        <div id="taskPool" class="dropzone min-h-0 flex-1 bg-slate-100/50 dark:bg-zinc-800/20 border-2 border-dashed border-slate-200 dark:border-zinc-700/50 rounded-xl p-2 overflow-y-auto custom-scrollbar transition-all" data-quadrant="pool">
+                            <div class="task-container flex flex-wrap gap-2 content-start min-h-full">
+                                <!-- 待辦任務方塊會動態生成在這裡 -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex-shrink-0 flex flex-col pt-2 pb-1 border-t border-slate-200/50 dark:border-zinc-800/50">
+                        <h3 class="text-sm font-extrabold text-slate-800 dark:text-zinc-200 mb-2 flex items-center gap-1.5">
+                            ⭐️ 今日表現評分
+                        </h3>
+                        <div class="flex items-center justify-between w-full bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-1.5 shadow-sm" id="scoreContainer">
+                            <!-- JS 動態生成 1-10 的按鈕 -->
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- 【頁面四：習慣追蹤 (Habit Tracker View)】 -->
+            <div id="habitView" class="absolute inset-0 flex flex-col lg:flex-row p-4 sm:p-6 lg:p-8 gap-6 overflow-hidden translate-x-full transition-transform duration-300 ease-out hidden bg-slate-50/30 dark:bg-zinc-950">
+                
+                <!-- 左半邊 (2/3)：打卡網格 -->
+                <div class="flex-1 lg:w-2/3 flex flex-col h-full overflow-hidden pr-1 lg:pr-4">
+                    <div class="flex items-center justify-between mb-4 flex-shrink-0 w-full">
+                        <div>
+                            <h1 class="text-2xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white" id="habitMonthDisplay">2026 年 6 月</h1>
+                            <p class="text-xs sm:text-sm text-slate-400 dark:text-zinc-500 font-medium mt-1">習慣追蹤網格</p>
+                        </div>
+                        <div class="flex items-center gap-1 sm:gap-2">
+                            <button id="addHabitBtn" class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl border border-appleBlue bg-appleBlue text-white hover:bg-blue-600 transition-colors shadow-sm flex items-center gap-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                                <span class="hidden sm:inline">新增習慣</span>
+                            </button>
+                            <div class="w-px h-6 bg-slate-200 dark:bg-zinc-700 mx-1 sm:mx-2"></div>
+                            
+                            <button id="habitPrevMonthBtn" class="p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors bg-white dark:bg-zinc-900">
+                                <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+                            </button>
+                            <button id="habitTodayBtn" class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl border border-slate-200 dark:border-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors bg-white dark:bg-zinc-900 shadow-sm">本月</button>
+                            <button id="habitNextMonthBtn" class="p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors bg-white dark:bg-zinc-900">
+                                <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 overflow-auto custom-scrollbar relative bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-sm">
+                        <table class="w-full border-collapse text-left min-w-max">
+                            <thead class="sticky top-0 z-20 bg-slate-100 dark:bg-zinc-800/90 backdrop-blur-md shadow-sm">
+                                <tr id="habitTableHeader" class="divide-x divide-slate-200 dark:divide-zinc-700">
+                                    <th class="sticky left-0 z-30 w-36 sm:w-48 bg-slate-100 dark:bg-zinc-800 p-3 text-xs sm:text-sm font-extrabold text-slate-600 dark:text-zinc-300 tracking-wider">習慣目標</th>
+                                    <!-- JS 動態產生日期 1~31 -->
+                                </tr>
+                            </thead>
+                            <tbody id="habitTableBody" class="divide-y divide-slate-200 dark:divide-zinc-800 text-slate-700 dark:text-zinc-300">
+                                <!-- JS 動態產生習慣列 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 右半邊 (1/3)：數據統計與分析 -->
+                <div class="lg:w-1/3 flex flex-col h-full overflow-y-auto custom-scrollbar border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-zinc-800 pt-6 lg:pt-0 lg:pl-6 space-y-4">
+                    <div class="flex flex-col mb-2 flex-shrink-0">
+                        <span class="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">TRACKER STATS</span>
+                        <h2 class="text-xl sm:text-3xl font-extrabold text-slate-900 dark:text-white mt-0.5 flex items-center gap-2">
+                            📊 數據統計
+                        </h2>
+                    </div>
+
+                    <div class="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-4 shadow-sm">
+                        <label class="block text-xs font-bold text-slate-500 dark:text-zinc-400 mb-2">目前查看的習慣分析</label>
+                        <div id="statHabitSelector" class="font-bold text-sm sm:text-base text-appleBlue px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-900/30 truncate">
+                            請在左側點選一個習慣
+                        </div>
+                    </div>
+
+                    <div class="bg-gradient-to-br from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 rounded-2xl border border-orange-100 dark:border-orange-900/30 p-5 shadow-sm flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wider mb-1">目前連續達標</p>
+                            <div class="flex items-baseline gap-1.5">
+                                <span class="text-4xl font-black text-orange-500 dark:text-orange-400" id="statCurrentStreak">0</span>
+                                <span class="text-sm font-bold text-orange-400 dark:text-orange-500">天</span>
+                            </div>
+                        </div>
+                        <div class="text-4xl opacity-80">🔥</div>
+                    </div>
+
+                    <div class="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-5 shadow-sm flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider mb-1">本月達成次數</p>
+                            <div class="flex items-baseline gap-1.5">
+                                <span class="text-3xl font-black text-slate-800 dark:text-white" id="statMonthCount">0</span>
+                                <span class="text-xs font-bold text-slate-400">/ <span id="statMonthTotal">30</span> 天</span>
+                            </div>
+                        </div>
+                        <div class="w-12 h-12 rounded-full border-4 border-slate-100 dark:border-zinc-800 flex items-center justify-center relative">
+                            <span class="text-[10px] font-bold text-slate-500" id="statMonthPercent">0%</span>
+                            <svg class="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 36 36">
+                                <path id="statMonthRing" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#34c759" stroke-width="4" stroke-dasharray="0, 100" stroke-linecap="round" />
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-5 shadow-sm">
+                        <p class="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider mb-4">近三個月達成比較</p>
+                        <div class="space-y-4" id="statHistoryList">
+                            <div class="text-xs text-slate-400 text-center py-4">請選擇習慣以查看趨勢</div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- 【頁面五：🌟 想做的事清單 (Bucket List View)】 -->
+            <div id="bucketView" class="absolute inset-0 flex flex-col p-4 sm:p-6 lg:p-8 gap-6 overflow-hidden translate-x-full transition-transform duration-300 ease-out hidden bg-slate-50/30 dark:bg-zinc-950">
+                <div class="flex items-center justify-between mb-2 flex-shrink-0">
+                    <div>
+                        <span class="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">BUCKET LIST & GOALS</span>
+                        <h1 class="text-2xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white mt-0.5 flex items-center gap-2">🌟 想做的事清單</h1>
+                        <p class="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 font-medium mt-1">將大目標拆解成小行動，由遠到近規劃你的生活</p>
+                    </div>
+                </div>
+
+                <!-- 三個表格並排 (電腦版並排，手機版上下疊加) -->
+                <div class="flex-1 flex flex-col lg:flex-row gap-4 sm:gap-6 min-h-0 overflow-y-auto lg:overflow-hidden custom-scrollbar pb-4">
+                    
+                    <!-- 表格 1：今年想做的事 -->
+                    <div class="flex-1 flex flex-col bg-white dark:bg-zinc-900 rounded-3xl border border-slate-200 dark:border-zinc-800 shadow-sm min-h-[400px] lg:min-h-0 overflow-hidden flex-shrink-0 lg:flex-shrink transition-all hover:shadow-md">
+                        <div class="p-4 bg-red-50 dark:bg-red-900/10 border-b border-red-100 dark:border-red-900/20 flex-shrink-0">
+                            <h2 class="font-bold text-red-600 dark:text-red-400 flex items-center gap-2 text-sm sm:text-base">
+                                <span class="text-lg">🎯</span> 今年想做的事
+                            </h2>
+                        </div>
+                        <div class="p-3 border-b border-slate-100 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 flex gap-2 flex-shrink-0">
+                            <input type="text" id="bucketInputYear" placeholder="新增主目標..." class="flex-1 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-red-400 transition-colors shadow-sm">
+                            <button onclick="addBucketItem('year')" class="bg-red-500 text-white rounded-xl px-3 py-2 text-xs font-bold hover:bg-red-600 transition-colors shadow-sm">+</button>
+                        </div>
+                        <div id="bucketListYear" class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
+                            <!-- JS 動態產生 -->
+                        </div>
+                    </div>
+
+                    <!-- 表格 2：這個月想做的事 -->
+                    <div class="flex-1 flex flex-col bg-white dark:bg-zinc-900 rounded-3xl border border-slate-200 dark:border-zinc-800 shadow-sm min-h-[400px] lg:min-h-0 overflow-hidden flex-shrink-0 lg:flex-shrink transition-all hover:shadow-md">
+                        <div class="p-4 bg-blue-50 dark:bg-blue-900/10 border-b border-blue-100 dark:border-blue-900/20 flex-shrink-0">
+                            <h2 class="font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2 text-sm sm:text-base">
+                                <span class="text-lg">🗓️</span> 這個月想做的事
+                            </h2>
+                        </div>
+                        <div class="p-3 border-b border-slate-100 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 flex gap-2 flex-shrink-0">
+                            <input type="text" id="bucketInputMonth" placeholder="新增主目標..." class="flex-1 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-blue-400 transition-colors shadow-sm">
+                            <button onclick="addBucketItem('month')" class="bg-blue-500 text-white rounded-xl px-3 py-2 text-xs font-bold hover:bg-blue-600 transition-colors shadow-sm">+</button>
+                        </div>
+                        <div id="bucketListMonth" class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
+                            <!-- JS 動態產生 -->
+                        </div>
+                    </div>
+
+                    <!-- 表格 3：這週想做的事 -->
+                    <div class="flex-1 flex flex-col bg-white dark:bg-zinc-900 rounded-3xl border border-slate-200 dark:border-zinc-800 shadow-sm min-h-[400px] lg:min-h-0 overflow-hidden flex-shrink-0 lg:flex-shrink transition-all hover:shadow-md">
+                        <div class="p-4 bg-green-50 dark:bg-green-900/10 border-b border-green-100 dark:border-green-900/20 flex-shrink-0">
+                            <h2 class="font-bold text-green-600 dark:text-green-400 flex items-center gap-2 text-sm sm:text-base">
+                                <span class="text-lg">✅</span> 這週想做的事
+                            </h2>
+                        </div>
+                        <div class="p-3 border-b border-slate-100 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 flex gap-2 flex-shrink-0">
+                            <input type="text" id="bucketInputWeek" placeholder="新增主目標..." class="flex-1 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-green-400 transition-colors shadow-sm">
+                            <button onclick="addBucketItem('week')" class="bg-green-500 text-white rounded-xl px-3 py-2 text-xs font-bold hover:bg-green-600 transition-colors shadow-sm">+</button>
+                        </div>
+                        <div id="bucketListWeek" class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
+                            <!-- JS 動態產生 -->
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- 【頁面六：✨ AI 智慧排程助理 (AI View)】 -->
+            <div id="aiView" class="absolute inset-0 flex flex-col p-4 sm:p-8 lg:p-12 overflow-y-auto custom-scrollbar translate-x-full transition-transform duration-300 ease-out hidden bg-slate-50/30 dark:bg-zinc-950">
+                <div class="max-w-3xl mx-auto w-full">
+                    <!-- 標題 -->
+                    <div class="mb-6 flex-shrink-0 text-center sm:text-left">
+                        <span class="text-xs sm:text-sm font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">GEMINI AI CO-PILOT</span>
+                        <h2 class="text-2xl sm:text-4xl font-extrabold text-slate-900 dark:text-white mt-2 flex items-center justify-center sm:justify-start gap-2">
+                            ✨ 智慧時間管家
+                        </h2>
+                        <p class="text-sm sm:text-base text-slate-500 dark:text-zinc-400 mt-2">由 Gemini 2.5 Flash 提供智慧支援，幫你完美排程與分析生活。</p>
+                    </div>
+
+                    <!-- 功能一：✨ 智慧行程產生器 -->
+                    <div class="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-5 sm:p-8 mb-6 shadow-sm hover:shadow-md transition-shadow">
+                        <h3 class="text-sm sm:text-base font-extrabold text-slate-700 dark:text-zinc-200 uppercase tracking-wider mb-2 flex items-center gap-2">
+                            🎯 智慧自動排程
+                        </h3>
+                        <p class="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mb-4 leading-relaxed">
+                            選定日期：<strong class="text-appleBlue font-bold text-base" id="aiSelectedDateLabel">6月19日</strong>。請輸入你這天的規劃目標，AI 將自動為你生成並匯入合理的行程。
+                        </p>
+                        <div class="space-y-4">
+                            <input type="text" id="aiPromptInput" placeholder="例如：台南一日遊吃美食、準備期末考衝刺、放鬆健康的一天..." class="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-2xl py-3 sm:py-4 px-4 text-sm sm:text-base focus:outline-none focus:border-appleBlue transition-all text-slate-800 dark:text-white shadow-inner">
+                            <button id="aiGenerateBtn" class="w-full bg-appleBlue text-white font-bold py-3 sm:py-4 rounded-2xl hover:bg-blue-600 transition-all text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg shadow-appleBlue/20 hover:-translate-y-0.5 active:translate-y-0">
+                                <span>✨ 智慧規劃並寫入行程</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 功能二：✨ 生活平衡時間分析 -->
+                    <div class="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-5 sm:p-8 shadow-sm hover:shadow-md transition-shadow">
+                        <h3 class="text-sm sm:text-base font-extrabold text-slate-700 dark:text-zinc-200 uppercase tracking-wider mb-2 flex items-center gap-2">
+                            📊 生活平衡與時間建議
+                        </h3>
+                        <p class="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mb-4 leading-relaxed">
+                            分析本月 (<strong class="text-applePurple font-bold text-base" id="aiSelectedMonthLabel">2026年6月</strong>) 的所有存檔事件，為你的健康與工作分配提供改善建議。
+                        </p>
+                        <button id="aiAnalyzeBtn" class="w-full bg-applePurple text-white font-bold py-3 sm:py-4 rounded-2xl hover:bg-purple-600 transition-all text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg shadow-applePurple/20 hover:-translate-y-0.5 active:translate-y-0">
+                            <span>✨ 分析本月生活平衡</span>
+                        </button>
+
+                        <div id="aiAnalysisResultContainer" class="mt-6 hidden p-5 sm:p-6 rounded-2xl bg-purple-50/50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-900/30">
+                            <div id="aiAnalysisText" class="text-sm sm:text-base text-slate-700 dark:text-zinc-200 space-y-3 leading-relaxed font-medium"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div> <!-- /appContainer -->
+
+    <!-- 全螢幕遮罩 (Overlay) -->
+    <div id="sidebarOverlay" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 hidden opacity-0 transition-opacity duration-300"></div>
+
+    <!-- 左側隱藏式側邊欄 (Sidebar) -->
+    <aside id="sidebar" class="fixed top-0 left-0 h-full w-64 sm:w-72 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl shadow-2xl z-50 transform -translate-x-full transition-transform duration-300 flex flex-col border-r border-slate-200 dark:border-zinc-800">
+        <!-- 側邊欄標頭 -->
+        <div class="h-14 border-b border-slate-100 dark:border-zinc-800/80 px-5 flex items-center justify-between flex-shrink-0">
+            <span class="font-extrabold text-slate-900 dark:text-white tracking-wide">系統選單</span>
+            <button id="closeSidebarBtn" class="p-2 -mr-2 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-appleRed transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        
+        <!-- 導航選單按鈕區 -->
+        <div class="flex-1 flex flex-col p-4 space-y-2 overflow-y-auto custom-scrollbar">
+            
+            <span class="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-2 pl-2">主要視圖</span>
+            
+            <!-- 側邊欄標籤一：月曆 -->
+            <button id="tabCalendarBtn" class="w-full flex items-center justify-start gap-3 px-4 py-3.5 rounded-xl transition-all font-bold text-sm text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/50">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5m-9-6h.008v.008H12v-.008zM12 15h.008v.008H12V15zm0 2.25h.008v.008H12v-.008zM9.75 15h.008v.008H9.75V15zm0 2.25h.008v.008H9.75v-.008zM7.5 15h.008v.008H7.5V15zm0 2.25h.008v.008H7.5v-.008zm6.75-4.5h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V15zm0 2.25h.008v.008h-.008v-.008zm2.25-4.5h.008v.008H16.5v-.008zm0 2.25h.008v.008H16.5V15z" />
+                </svg>
+                <span>月曆視圖</span>
+            </button>
+
+            <!-- 側邊欄標籤：週行事曆 -->
+            <button id="tabWeekBtn" class="w-full flex items-center justify-start gap-3 px-4 py-3.5 rounded-xl transition-all font-bold text-sm text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/50">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
+                </svg>
+                <span>週行事曆</span>
+            </button>
+
+            <!-- 側邊欄標籤二：今日日程 -->
+            <button id="tabAgendaBtn" class="w-full flex items-center justify-start gap-3 px-4 py-3.5 rounded-xl transition-all font-bold text-sm text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/50 relative">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-0.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                </svg>
+                <span>日程與矩陣</span>
+                <span id="agendaBadge" class="hidden ml-auto bg-appleRed text-white text-[10px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center shadow">0</span>
+            </button>
+
+            <!-- 側邊欄標籤：習慣追蹤 -->
+            <button id="tabHabitBtn" class="w-full flex items-center justify-start gap-3 px-4 py-3.5 rounded-xl transition-all font-bold text-sm text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/50">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z" />
+                </svg>
+                <span>習慣追蹤</span>
+            </button>
+
+            <!-- 側邊欄標籤：想做的事 -->
+            <button id="tabBucketBtn" class="w-full flex items-center justify-start gap-3 px-4 py-3.5 rounded-xl transition-all font-bold text-sm text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/50">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                </svg>
+                <span>想做的事</span>
+            </button>
+
+            <!-- 側邊欄標籤三：✨ AI 智慧助理 -->
+            <button id="tabAiBtn" class="w-full flex items-center justify-start gap-3 px-4 py-3.5 rounded-xl transition-all font-bold text-sm text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/50">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 21L8.188 15.904L3 15L8.188 14.096L9 9L9.813 14.096L15 15L9.813 15.904Z M19.071 4.929L18.5 8.5L17.929 4.929L14.358 4.358L17.929 3.788L18.5 0.217L19.071 3.788L22.642 4.358L19.071 4.929Z M19.071 19.071L18.5 22.642L17.929 19.071L14.358 18.5L17.929 17.929L18.5 14.358L19.071 17.929L22.642 18.5L19.071 19.071Z" />
+                </svg>
+                <span>AI 助理</span>
+            </button>
+
+            <!-- ⭐ 快速工具區 -->
+            <span class="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-2 pl-2 mt-4 block">快速工具</span>
+            <button id="sidebarStudyPlanBtn" class="w-full flex items-center justify-start gap-3 px-4 py-3.5 rounded-xl transition-all font-bold text-sm text-indigo-500 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
+                <span class="text-lg">🧠</span>
+                <span>1/4/7/14 記憶排程</span>
+            </button>
+
+        </div>
+        
+        <div class="p-4 border-t border-slate-100 dark:border-zinc-800/80 text-center">
+            <span class="text-[10px] text-slate-400 dark:text-zinc-500 font-medium">iCalendar WebApp v7.0</span>
+        </div>
+    </aside>
+
+    <!-- 彈出視窗：新增/編輯行程 Modal -->
+    <div id="eventModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+        <div class="bg-white dark:bg-zinc-900 w-full max-w-[400px] rounded-3xl border border-slate-200 dark:border-zinc-800 shadow-2xl overflow-hidden transform scale-95 transition-all duration-200">
+            <div class="p-5 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between bg-slate-50/50 dark:bg-zinc-800/20">
+                <h3 class="text-base font-bold text-slate-900 dark:text-white" id="modalTitle">新增日程行程</h3>
+                <button id="closeModalBtn" class="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-full hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <form id="eventForm" class="p-5 space-y-4 max-h-[75vh] overflow-y-auto custom-scrollbar">
+                <input type="hidden" id="editEventId">
+                
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">行程日期 <span class="text-appleRed">*</span></label>
+                    <input type="date" id="eventDate" required class="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-appleBlue focus:ring-1 focus:ring-appleBlue transition-all text-slate-800 dark:text-white color-scheme-dark">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">行程名稱 <span class="text-appleRed">*</span></label>
+                    <input type="text" id="eventTitle" required placeholder="例如：跟主管開會、看牙醫..." class="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-appleBlue focus:ring-1 focus:ring-appleBlue transition-all text-slate-800 dark:text-white">
+                </div>
+
+                <!-- ⭐ 新增：全天事件切換開關 -->
+                <div class="flex items-center justify-between bg-slate-50 dark:bg-zinc-800/50 px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700">
+                    <label class="flex items-center gap-2 cursor-pointer w-full">
+                        <input type="checkbox" id="eventIsAllDay" onchange="toggleTimeInputs()" class="w-4 h-4 text-appleBlue rounded focus:ring-appleBlue bg-white dark:bg-zinc-900 border-slate-300 dark:border-zinc-600">
+                        <span class="text-xs font-bold text-slate-700 dark:text-zinc-300 select-none">🌞 設為全天事件 (加入待辦矩陣)</span>
+                    </label>
+                </div>
+
+                <!-- ⭐ 將時間區塊用容器包起來，方便隱藏 -->
+                <div id="timeInputsContainer" class="space-y-4 transition-all duration-300 origin-top">
+                    <div class="p-3.5 rounded-2xl border border-blue-100 dark:border-blue-900/30 bg-blue-50/30 dark:bg-blue-900/10">
+                        <label class="block text-xs font-bold text-appleBlue uppercase tracking-wider mb-3">🎯 理想預定時間</label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-[10px] sm:text-xs text-slate-500 dark:text-zinc-400 mb-1">開始 <span class="text-appleRed">*</span></label>
+                                <input type="time" id="idealStartTime" class="w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-appleBlue transition-colors color-scheme-dark">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] sm:text-xs text-slate-500 dark:text-zinc-400 mb-1">結束 <span class="text-appleRed">*</span></label>
+                                <input type="time" id="idealEndTime" class="w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-appleBlue transition-colors color-scheme-dark">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="p-3.5 rounded-2xl border border-green-100 dark:border-green-900/30 bg-green-50/30 dark:bg-green-900/10">
+                        <label class="block text-xs font-bold text-appleGreen uppercase tracking-wider mb-3 flex justify-between items-center">
+                            <span>✅ 實際執行時間</span>
+                            <span class="text-[10px] text-slate-400 font-medium normal-case bg-green-100/50 dark:bg-green-900/30 px-2 py-0.5 rounded-md">(選填)</span>
+                        </label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-[10px] sm:text-xs text-slate-500 dark:text-zinc-400 mb-1">實際開始</label>
+                                <input type="time" id="actualStartTime" class="w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-appleGreen transition-colors color-scheme-dark">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] sm:text-xs text-slate-500 dark:text-zinc-400 mb-1">實際結束</label>
+                                <input type="time" id="actualEndTime" class="w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-appleGreen transition-colors color-scheme-dark">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <!-- ⭐ 新增：標籤編輯按鈕 -->
+                    <div class="flex items-end justify-between mb-2">
+                        <label class="block text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider">分類標籤</label>
+                        <button type="button" onclick="openTagModal()" class="text-[10px] font-bold text-appleBlue hover:text-blue-600 transition-colors bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded flex items-center gap-1">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+                            編輯標籤
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-4 gap-2">
+                        <label class="flex flex-col items-center justify-center py-3 px-2 rounded-xl border border-slate-200 dark:border-zinc-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
+                            <input type="radio" name="eventCategory" value="work" checked class="hidden peer">
+                            <span class="w-4 h-4 rounded-full bg-appleBlue border-2 border-transparent peer-checked:border-white dark:peer-checked:border-zinc-900 ring-2 ring-transparent peer-checked:ring-appleBlue"></span>
+                            <span id="tagLabelWork" class="text-[10px] sm:text-xs mt-1.5 font-bold text-slate-600 dark:text-zinc-300 truncate w-full text-center">工作</span>
+                        </label>
+                        <label class="flex flex-col items-center justify-center py-3 px-2 rounded-xl border border-slate-200 dark:border-zinc-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
+                            <input type="radio" name="eventCategory" value="personal" class="hidden peer">
+                            <span class="w-4 h-4 rounded-full bg-appleGreen border-2 border-transparent peer-checked:border-white dark:peer-checked:border-zinc-900 ring-2 ring-transparent peer-checked:ring-appleGreen"></span>
+                            <span id="tagLabelPersonal" class="text-[10px] sm:text-xs mt-1.5 font-bold text-slate-600 dark:text-zinc-300 truncate w-full text-center">個人</span>
+                        </label>
+                        <label class="flex flex-col items-center justify-center py-3 px-2 rounded-xl border border-slate-200 dark:border-zinc-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
+                            <input type="radio" name="eventCategory" value="important" class="hidden peer">
+                            <span class="w-4 h-4 rounded-full bg-appleRed border-2 border-transparent peer-checked:border-white dark:peer-checked:border-zinc-900 ring-2 ring-transparent peer-checked:ring-appleRed"></span>
+                            <span id="tagLabelImportant" class="text-[10px] sm:text-xs mt-1.5 font-bold text-slate-600 dark:text-zinc-300 truncate w-full text-center">重要</span>
+                        </label>
+                        <label class="flex flex-col items-center justify-center py-3 px-2 rounded-xl border border-slate-200 dark:border-zinc-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
+                            <input type="radio" name="eventCategory" value="health" class="hidden peer">
+                            <span class="w-4 h-4 rounded-full bg-applePurple border-2 border-transparent peer-checked:border-white dark:peer-checked:border-zinc-900 ring-2 ring-transparent peer-checked:ring-applePurple"></span>
+                            <span id="tagLabelHealth" class="text-[10px] sm:text-xs mt-1.5 font-bold text-slate-600 dark:text-zinc-300 truncate w-full text-center">健康</span>
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">備註說明</label>
+                    <textarea id="eventNotes" rows="3" class="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-appleBlue focus:ring-1 focus:ring-appleBlue transition-all resize-none text-slate-800 dark:text-white"></textarea>
+                </div>
+                <div class="pt-2 flex gap-3 sticky bottom-0 bg-white dark:bg-zinc-900 pb-2">
+                    <button type="button" id="deleteEventBtn" class="hidden flex-1 bg-appleRed/10 hover:bg-appleRed/20 text-appleRed font-bold py-3.5 rounded-xl transition-colors text-sm">刪除</button>
+                    <button type="submit" class="flex-[2] bg-appleBlue text-white font-bold py-3.5 rounded-xl hover:bg-blue-600 transition-all shadow-lg shadow-appleBlue/20 text-sm hover:-translate-y-0.5 active:translate-y-0">儲存變更</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 彈出視窗：新增習慣 Modal -->
+    <div id="habitModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+        <div class="bg-white dark:bg-zinc-900 w-full max-w-[360px] rounded-3xl border border-slate-200 dark:border-zinc-800 shadow-2xl overflow-hidden transform scale-95 transition-all duration-200">
+            <div class="p-5 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between bg-slate-50/50 dark:bg-zinc-800/20">
+                <h3 class="text-base font-bold text-slate-900 dark:text-white">新增追蹤習慣</h3>
+                <button id="closeHabitModalBtn" class="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-full hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <form id="habitForm" class="p-5 space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">習慣名稱與 Icon <span class="text-appleRed">*</span></label>
+                    <input type="text" id="habitName" required placeholder="例如：💧 喝水 2000cc" class="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-appleBlue focus:ring-1 focus:ring-appleBlue transition-all text-slate-800 dark:text-white">
+                </div>
+                <div class="pt-2 flex gap-3">
+                    <button type="button" id="cancelHabitBtn" class="flex-1 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 font-bold py-3.5 rounded-xl transition-colors text-sm">取消</button>
+                    <button type="submit" class="flex-[2] bg-appleBlue text-white font-bold py-3.5 rounded-xl hover:bg-blue-600 transition-all shadow-lg shadow-appleBlue/20 text-sm hover:-translate-y-0.5 active:translate-y-0">儲存習慣</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ⭐ 彈出視窗：編輯分類標籤 Modal -->
+    <div id="tagModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[70]">
+        <div class="bg-white dark:bg-zinc-900 w-full max-w-[320px] rounded-3xl border border-slate-200 dark:border-zinc-800 shadow-2xl overflow-hidden transform scale-95 transition-all duration-200">
+            <div class="p-4 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between bg-slate-50/50 dark:bg-zinc-800/20">
+                <h3 class="text-base font-bold text-slate-900 dark:text-white">自訂分類標籤</h3>
+            </div>
+            <div class="p-5 space-y-3">
+                <div class="flex items-center gap-3">
+                    <span class="w-4 h-4 rounded-full bg-appleBlue shadow-sm"></span>
+                    <input type="text" id="editTagWork" class="flex-1 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-appleBlue text-slate-800 dark:text-white">
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="w-4 h-4 rounded-full bg-appleGreen shadow-sm"></span>
+                    <input type="text" id="editTagPersonal" class="flex-1 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-appleGreen text-slate-800 dark:text-white">
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="w-4 h-4 rounded-full bg-appleRed shadow-sm"></span>
+                    <input type="text" id="editTagImportant" class="flex-1 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-appleRed text-slate-800 dark:text-white">
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="w-4 h-4 rounded-full bg-applePurple shadow-sm"></span>
+                    <input type="text" id="editTagHealth" class="flex-1 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-applePurple text-slate-800 dark:text-white">
+                </div>
+                <div class="pt-3 flex gap-2">
+                    <button type="button" onclick="closeTagModal()" class="flex-1 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 font-bold py-2.5 rounded-xl transition-colors text-sm">取消</button>
+                    <button type="button" onclick="saveTags()" class="flex-1 bg-appleBlue text-white font-bold py-2.5 rounded-xl hover:bg-blue-600 transition-colors shadow-sm text-sm">儲存標籤</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ⭐ 彈出視窗：1/4/7/14 學習記憶排程 Modal -->
+    <div id="studyPlanModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+        <div class="bg-white dark:bg-zinc-900 w-full max-w-[420px] rounded-3xl border border-slate-200 dark:border-zinc-800 shadow-2xl overflow-hidden transform scale-95 transition-all duration-200">
+            <div class="p-5 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between bg-indigo-50/50 dark:bg-indigo-900/10">
+                <h3 class="text-base font-extrabold text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
+                    <span class="text-lg">🧠</span> 1/4/7/14 記憶法排程
+                </h3>
+                <button id="closeStudyPlanBtn" class="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-full hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <form id="studyPlanForm" class="p-5 space-y-4 max-h-[75vh] overflow-y-auto custom-scrollbar">
+                <div class="bg-indigo-50 dark:bg-indigo-900/20 p-3 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
+                    <p class="text-xs text-indigo-700 dark:text-indigo-300 font-medium leading-relaxed">
+                        基於「艾賓浩斯遺忘曲線」，只要輸入首次學習日期，系統將自動為你生成 <strong class="font-bold">+1、+3、+6、+13 天</strong> 的黃金複習排程。
+                    </p>
+                </div>
+                
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">學習主題 <span class="text-appleRed">*</span></label>
+                    <input type="text" id="studyPlanTitle" required placeholder="例如：英文單字 Ch1、微積分..." class="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 transition-all text-slate-800 dark:text-white">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">首學日期 <span class="text-appleRed">*</span></label>
+                        <input type="date" id="studyPlanDate" required class="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 transition-all text-slate-800 dark:text-white color-scheme-dark">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-transparent select-none tracking-wider mb-1.5">隱藏</label>
+                        <div class="w-full bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-xl px-3 py-2.5 text-[11px] sm:text-xs flex items-center justify-center font-bold text-indigo-500">
+                            ✅ 預設為全天待辦
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 預覽區塊 -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider mb-2">自動排程預覽</label>
+                    <div id="studyPlanPreview" class="bg-slate-50 dark:bg-zinc-800/50 rounded-xl p-3 border border-slate-200 dark:border-zinc-700 space-y-2">
+                        <!-- JS 動態產生預覽 -->
+                    </div>
+                </div>
+
+                <div class="pt-2 sticky bottom-0 bg-white dark:bg-zinc-900 pb-2">
+                    <button type="submit" class="w-full bg-indigo-500 text-white font-bold py-3.5 rounded-xl hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-500/20 text-sm hover:-translate-y-0.5 active:translate-y-0">
+                        ✨ 一鍵排入 5 個全天待辦
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 自訂確認對話方塊 -->
+    <div id="confirmModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[70]">
+        <div class="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-3xl border border-slate-200 dark:border-zinc-800 shadow-2xl p-8 text-center transform scale-95 transition-all duration-200">
+            <div class="w-14 h-14 bg-appleRed/10 text-appleRed rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            </div>
+            <h3 class="text-lg font-extrabold text-slate-900 dark:text-white mb-2" id="confirmTitle">確認動作</h3>
+            <p class="text-sm text-slate-500 dark:text-zinc-400 mb-6 leading-relaxed" id="confirmMessage">你確定要執行此操作嗎？</p>
+            <div class="flex gap-3">
+                <button id="confirmCancelBtn" class="flex-1 bg-slate-50 dark:bg-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-600 dark:text-zinc-300 font-bold py-3 rounded-xl transition-colors text-sm">取消</button>
+                <button id="confirmConfirmBtn" class="flex-1 bg-appleRed text-white hover:bg-red-600 font-bold py-3 rounded-xl transition-colors text-sm shadow-md shadow-appleRed/20">確定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 自訂彈出式 Toast 通知容器 -->
+    <div id="toastContainer" class="fixed top-6 right-6 space-y-3 z-[80] pointer-events-none"></div>
+
+    <script>
+        // --- 核心狀態管理 ---
+        const NOW_REAL_TIME = new Date();
+        let currentDate = new Date(NOW_REAL_TIME.getFullYear(), NOW_REAL_TIME.getMonth(), NOW_REAL_TIME.getDate()); 
+        let selectedDate = new Date(NOW_REAL_TIME.getFullYear(), NOW_REAL_TIME.getMonth(), NOW_REAL_TIME.getDate());
+        let currentWeekStart = getMonday(NOW_REAL_TIME); 
+        
+        let events = [];      
+        let tasks = [];       
+        let dailyScores = {}; 
+        
+        let habits = []; 
+        let habitLogs = {}; 
+        let selectedHabitId = null;
+
+        let bucketItems = []; 
+        
+        let customTags = {
+            work: '工作',
+            personal: '個人',
+            important: '重要',
+            health: '健康'
+        };
+
+        let confirmActionCallback = null;
+        let activeTab = 'calendar'; 
+
+        let globalLastClickTime = 0;
+        let globalLastClickedDateStr = '';
+        let timelineInterval = null;
+
+        const PIXEL_PER_HOUR = 42; 
+        const PIXEL_PER_MIN = PIXEL_PER_HOUR / 60;
+
+        const categoryColors = {
+            work: { bg: 'bg-appleBlue/10 dark:bg-appleBlue/20', text: 'text-appleBlue dark:text-blue-400', border: 'border-appleBlue' },
+            personal: { bg: 'bg-appleGreen/10 dark:bg-appleGreen/20', text: 'text-appleGreen dark:text-green-400', border: 'border-appleGreen' },
+            important: { bg: 'bg-appleRed/10 dark:bg-appleRed/20', text: 'text-appleRed dark:text-red-400', border: 'border-appleRed' },
+            health: { bg: 'bg-applePurple/10 dark:bg-applePurple/20', text: 'text-applePurple dark:text-purple-400', border: 'border-applePurple' }
+        };
+
+        const defaultEvents = [
+            {
+                id: '1',
+                title: '🚀 體驗 1/4/7/14 記憶排程',
+                date: formatDateString(new Date()), 
+                idealStartTime: '09:00',
+                idealEndTime: '11:00',
+                actualStartTime: '09:15',
+                actualEndTime: '11:30',
+                category: 'work',
+                notes: '進入側邊欄或日程面板底部，點擊「🧠 記憶排程」，讓 AI 幫你自動排好複習行事曆！'
+            }
+        ];
+
+        // --- DOM 節點初始化 ---
+        const monthDisplay = document.getElementById('monthDisplay');
+        const todaySubtitle = document.getElementById('todaySubtitle');
+        const calendarGrid = document.getElementById('calendarGrid');
+        const globalAddEventBtn = document.getElementById('globalAddEventBtn');
+        const prevMonthBtn = document.getElementById('prevMonthBtn');
+        const nextMonthBtn = document.getElementById('nextMonthBtn');
+        const todayBtn = document.getElementById('todayBtn');
+        
+        const weekDisplay = document.getElementById('weekDisplay');
+        const weekTodaySubtitle = document.getElementById('weekTodaySubtitle');
+        const globalAddEventBtnWeek = document.getElementById('globalAddEventBtnWeek');
+        const prevWeekBtn = document.getElementById('prevWeekBtn');
+        const nextWeekBtn = document.getElementById('nextWeekBtn');
+        const todayWeekBtn = document.getElementById('todayWeekBtn');
+        const weekGrid = document.getElementById('weekGrid');
+
+        const focusedDateLabel = document.getElementById('focusedDateLabel');
+        const eventListContainer = document.getElementById('eventListContainer');
+        const openAddModalBtn = document.getElementById('openAddModalBtn');
+        const openStudyPlanBtn = document.getElementById('openStudyPlanBtn'); 
+        
+        const eventModal = document.getElementById('eventModal');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const eventForm = document.getElementById('eventForm');
+        const deleteEventBtn = document.getElementById('deleteEventBtn');
+        const backToCalendarBtn = document.getElementById('backToCalendarBtn');
+        
+        // ⭐ 記憶排程 Modal DOM
+        const studyPlanModal = document.getElementById('studyPlanModal');
+        const closeStudyPlanBtn = document.getElementById('closeStudyPlanBtn');
+        const studyPlanForm = document.getElementById('studyPlanForm');
+        const studyPlanDateInput = document.getElementById('studyPlanDate');
+        const studyPlanTitleInput = document.getElementById('studyPlanTitle');
+        const studyPlanPreview = document.getElementById('studyPlanPreview');
+
+        // 側邊欄控制元件
+        const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
+        const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebarOverlay');
+        const tabCalendarBtn = document.getElementById('tabCalendarBtn');
+        const tabWeekBtn = document.getElementById('tabWeekBtn'); 
+        const tabAgendaBtn = document.getElementById('tabAgendaBtn');
+        const tabHabitBtn = document.getElementById('tabHabitBtn'); 
+        const tabBucketBtn = document.getElementById('tabBucketBtn');
+        const tabAiBtn = document.getElementById('tabAiBtn');
+        const sidebarStudyPlanBtn = document.getElementById('sidebarStudyPlanBtn'); 
+        
+        const calendarView = document.getElementById('calendarView');
+        const weekView = document.getElementById('weekView'); 
+        const agendaView = document.getElementById('agendaView');
+        const habitView = document.getElementById('habitView');
+        const bucketView = document.getElementById('bucketView'); 
+        const aiView = document.getElementById('aiView');
+        const agendaBadge = document.getElementById('agendaBadge');
+        
+        const quickPreviewTitle = document.getElementById('quickPreviewTitle');
+        const quickPreviewList = document.getElementById('quickPreviewList');
+
+        const newTaskInput = document.getElementById('newTaskInput');
+        const addTaskBtn = document.getElementById('addTaskBtn');
+        const scoreContainer = document.getElementById('scoreContainer');
+        let draggedTaskId = null; 
+
+        const habitMonthDisplay = document.getElementById('habitMonthDisplay');
+        const habitPrevMonthBtn = document.getElementById('habitPrevMonthBtn');
+        const habitNextMonthBtn = document.getElementById('habitNextMonthBtn');
+        const habitTodayBtn = document.getElementById('habitTodayBtn');
+        const addHabitBtn = document.getElementById('addHabitBtn');
+        const habitTableHeader = document.getElementById('habitTableHeader');
+        const habitTableBody = document.getElementById('habitTableBody');
+        const statHabitSelector = document.getElementById('statHabitSelector');
+        const statCurrentStreak = document.getElementById('statCurrentStreak');
+        const statMonthCount = document.getElementById('statMonthCount');
+        const statMonthTotal = document.getElementById('statMonthTotal');
+        const statMonthPercent = document.getElementById('statMonthPercent');
+        const statMonthRing = document.getElementById('statMonthRing');
+        const statHistoryList = document.getElementById('statHistoryList');
+        
+        const habitModal = document.getElementById('habitModal');
+        const closeHabitModalBtn = document.getElementById('closeHabitModalBtn');
+        const cancelHabitBtn = document.getElementById('cancelHabitBtn');
+        const habitForm = document.getElementById('habitForm');
+        const habitNameInput = document.getElementById('habitName');
+
+        const themeToggleBtn = document.getElementById('themeToggleBtn');
+        const toolsBtn = document.getElementById('toolsBtn');
+        const toolsDropdown = document.getElementById('toolsDropdown');
+        const exportBtn = document.getElementById('exportBtn');
+        const importFile = document.getElementById('importFile');
+        const clearAllBtn = document.getElementById('clearAllBtn');
+        const confirmModal = document.getElementById('confirmModal');
+        const confirmTitle = document.getElementById('confirmTitle');
+        const confirmMessage = document.getElementById('confirmMessage');
+        const confirmCancelBtn = document.getElementById('confirmCancelBtn');
+        const confirmConfirmBtn = document.getElementById('confirmConfirmBtn');
+
+        // --- 初始化應用程式 ---
+        function initApp() {
+            const localEvents = localStorage.getItem('desktop_calendar_events');
+            if (localEvents) events = JSON.parse(localEvents);
+            else events = [...defaultEvents];
+            
+            const localTasks = localStorage.getItem('desktop_calendar_tasks');
+            if (localTasks) tasks = JSON.parse(localTasks);
+
+            const localScores = localStorage.getItem('desktop_calendar_scores');
+            if (localScores) dailyScores = JSON.parse(localScores);
+            
+            const localHabits = localStorage.getItem('desktop_calendar_habits');
+            if (localHabits) habits = JSON.parse(localHabits);
+            else habits = [];
+            
+            const localHabitLogs = localStorage.getItem('desktop_calendar_habitLogs');
+            if (localHabitLogs) habitLogs = JSON.parse(localHabitLogs);
+            else habitLogs = {};
+
+            const localBucket = localStorage.getItem('desktop_calendar_bucketlist');
+            if (localBucket) bucketItems = JSON.parse(localBucket);
+            else bucketItems = [];
+
+            const localTags = localStorage.getItem('desktop_calendar_tags');
+            if (localTags) customTags = JSON.parse(localTags);
+            updateTagLabels(); 
+
+            renderCalendar();
+            renderWeekView(); 
+            renderAgendaTimeline();
+            renderAgendaTasksAndScore(); 
+            renderQuickPreview(); 
+            renderHabitGrid(); 
+            renderBucketList(); 
+            updateTabBadge();
+            initTheme();
+            setupEventListeners();
+            setupDragAndDrop(); 
+            
+            if (habits.length > 0) selectHabit(habits[0].id); 
+            
+            switchTab('calendar');
+            timelineInterval = setInterval(updateCurrentTimeLine, 60000);
+        }
+
+        function saveAllData() {
+            localStorage.setItem('desktop_calendar_events', JSON.stringify(events));
+            localStorage.setItem('desktop_calendar_tasks', JSON.stringify(tasks));
+            localStorage.setItem('desktop_calendar_scores', JSON.stringify(dailyScores));
+            localStorage.setItem('desktop_calendar_habits', JSON.stringify(habits));
+            localStorage.setItem('desktop_calendar_habitLogs', JSON.stringify(habitLogs));
+            localStorage.setItem('desktop_calendar_bucketlist', JSON.stringify(bucketItems));
+            localStorage.setItem('desktop_calendar_tags', JSON.stringify(customTags)); 
+            updateTabBadge();
+            renderQuickPreview();
+            renderWeekView(); 
+        }
+
+        // --- ⭐ 1/4/7/14 學習記憶排程邏輯 (預設全天待辦) ---
+        function openStudyPlanModal() {
+            studyPlanModal.classList.remove('hidden');
+            setTimeout(() => {
+                studyPlanModal.firstElementChild.classList.remove('scale-95');
+                studyPlanModal.firstElementChild.classList.add('scale-100');
+            }, 50);
+            
+            studyPlanForm.reset();
+            studyPlanDateInput.value = formatDateString(selectedDate);
+            updateStudyPlanPreview();
+        }
+
+        function closeStudyPlanModal() {
+            studyPlanModal.firstElementChild.classList.remove('scale-100');
+            studyPlanModal.firstElementChild.classList.add('scale-95');
+            setTimeout(() => { studyPlanModal.classList.add('hidden'); }, 150);
+        }
+
+        function getFutureDateStr(baseDateStr, addDays) {
+            const d = new Date(baseDateStr);
+            d.setDate(d.getDate() + addDays);
+            return formatDateString(d);
+        }
+
+        function updateStudyPlanPreview() {
+            const title = studyPlanTitleInput.value.trim() || '未命名的主題';
+            const baseDate = studyPlanDateInput.value;
+            
+            if (!baseDate) return;
+
+            const dates = [
+                { offset: 0, label: '首學', name: `[首學] ${title}` },
+                { offset: 1, label: '第 2 天', name: `[複習 1] ${title}` },
+                { offset: 3, label: '第 4 天', name: `[複習 2] ${title}` },
+                { offset: 6, label: '第 7 天', name: `[複習 3] ${title}` },
+                { offset: 13, label: '第 14 天', name: `[複習 4] ${title}` }
+            ];
+
+            studyPlanPreview.innerHTML = dates.map((d) => {
+                const isToday = d.offset === 0;
+                const dStr = getFutureDateStr(baseDate, d.offset);
+                const color = isToday ? 'text-appleBlue' : 'text-indigo-500';
+                
+                return `
+                    <div class="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-zinc-900 border border-slate-100 dark:border-zinc-700/50 shadow-sm">
+                        <div class="flex flex-col">
+                            <span class="text-[11px] font-bold ${color}">${d.name}</span>
+                            <span class="text-[9px] text-slate-400 dark:text-zinc-500 mt-0.5">${d.label}</span>
+                        </div>
+                        <span class="text-[10px] font-bold text-slate-700 dark:text-zinc-300 bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded">${dStr}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function handleStudyPlanSubmit(e) {
+            e.preventDefault();
+            const title = studyPlanTitleInput.value.trim();
+            const baseDate = studyPlanDateInput.value;
+            
+            if (!title || !baseDate) return;
+
+            const offsets = [0, 1, 3, 6, 13];
+            const labels = ['首學', '複習 1', '複習 2', '複習 3', '複習 4'];
+
+            offsets.forEach((offset, idx) => {
+                const eventDate = getFutureDateStr(baseDate, offset);
+                events.push({
+                    id: Date.now().toString() + '-' + idx,
+                    title: `[${labels[idx]}] ${title}`,
+                    date: eventDate,
+                    isAllDay: true, // ⭐ 自動設為全天待辦
+                    quadrant: 'pool', // ⭐ 自動放入任務池
+                    idealStartTime: '',
+                    idealEndTime: '',
+                    actualStartTime: '',
+                    actualEndTime: '',
+                    category: 'work', 
+                    notes: `基於 1/4/7/14 記憶法自動產生的全天待辦排程。\n原始學習日：${baseDate}`
+                });
+            });
+
+            saveAllData();
+            closeStudyPlanModal();
+            renderCalendar();
+            renderQuickPreview();
+            if (activeTab === 'agenda') {
+                renderAgendaTimeline();
+                renderAgendaTasksAndScore();
+            } else if (activeTab === 'week') {
+                renderWeekView();
+            }
+            showToast(`🎉 成功！已為你自動排入 5 個全天待辦複習！`, 'success');
+        }
+
+        // --- 側邊欄開關邏輯 ---
+        function openSidebar() {
+            sidebarOverlay.classList.remove('hidden');
+            setTimeout(() => {
+                sidebarOverlay.classList.remove('opacity-0');
+                sidebarOverlay.classList.add('opacity-100');
+                sidebar.classList.remove('-translate-x-full');
+            }, 10);
+        }
+
+        function closeSidebar() {
+            sidebarOverlay.classList.remove('opacity-100');
+            sidebarOverlay.classList.add('opacity-0');
+            sidebar.classList.add('-translate-x-full');
+            setTimeout(() => {
+                sidebarOverlay.classList.add('hidden');
+            }, 300);
+        }
+
+        // --- 分頁切換核心邏輯 ---
+        function switchTab(tabId) {
+            activeTab = tabId;
+            const views = [calendarView, weekView, agendaView, habitView, bucketView, aiView];
+            views.forEach(v => {
+                v.classList.add('hidden', 'translate-x-full');
+                v.classList.remove('-translate-x-full');
+            });
+
+            const baseTabClass = "w-full flex items-center justify-start gap-3 px-4 py-3.5 rounded-xl transition-all font-bold text-sm text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/50";
+            const activeTabClass = "w-full flex items-center justify-start gap-3 px-4 py-3.5 rounded-xl transition-all font-bold text-sm bg-appleBlue/10 dark:bg-appleBlue/20 text-appleBlue";
+            
+            tabCalendarBtn.className = baseTabClass;
+            tabWeekBtn.className = baseTabClass;
+            tabAgendaBtn.className = baseTabClass;
+            tabHabitBtn.className = baseTabClass;
+            tabBucketBtn.className = baseTabClass;
+            tabAiBtn.className = baseTabClass;
+
+            if (tabId === 'calendar') {
+                calendarView.classList.remove('hidden');
+                setTimeout(() => { calendarView.classList.remove('translate-x-full'); }, 50);
+                tabCalendarBtn.className = activeTabClass;
+            } else if (tabId === 'week') { 
+                weekView.classList.remove('hidden');
+                setTimeout(() => { weekView.classList.remove('translate-x-full'); }, 50);
+                tabWeekBtn.className = activeTabClass;
+                renderWeekView(); 
+            } else if (tabId === 'agenda') {
+                agendaView.classList.remove('hidden');
+                setTimeout(() => { agendaView.classList.remove('translate-x-full'); }, 50);
+                tabAgendaBtn.className = activeTabClass;
+                renderAgendaTimeline();
+                renderAgendaTasksAndScore();
+            } else if (tabId === 'habit') { 
+                habitView.classList.remove('hidden');
+                setTimeout(() => { habitView.classList.remove('translate-x-full'); }, 50);
+                tabHabitBtn.className = activeTabClass.replace('bg-appleBlue', 'bg-appleGreen').replace('text-appleBlue', 'text-appleGreen');
+                renderHabitGrid();
+            } else if (tabId === 'bucket') {
+                bucketView.classList.remove('hidden');
+                setTimeout(() => { bucketView.classList.remove('translate-x-full'); }, 50);
+                tabBucketBtn.className = activeTabClass.replace('bg-appleBlue', 'bg-appleRed').replace('text-appleBlue', 'text-appleRed');
+                renderBucketList();
+            } else if (tabId === 'ai') {
+                aiView.classList.remove('hidden');
+                setTimeout(() => { aiView.classList.remove('translate-x-full'); }, 50);
+                tabAiBtn.className = activeTabClass.replace('bg-appleBlue', 'bg-applePurple').replace('text-appleBlue', 'text-applePurple');
+            }
+
+            closeSidebar();
+        }
+
+        // --- 新增：更新 Tab 徽章 ---
+        function updateTabBadge() {
+            const selectedStr = formatDateString(selectedDate);
+            const count = events.filter(e => e.date === selectedStr).length + tasks.filter(t => t.date === selectedStr).length;
+            if (agendaBadge) {
+                if (count > 0) {
+                    agendaBadge.textContent = count;
+                    agendaBadge.classList.remove('hidden');
+                } else {
+                    agendaBadge.classList.add('hidden');
+                }
+            }
+        }
+
+        function updateTagLabels() {
+            const w = document.getElementById('tagLabelWork');
+            const p = document.getElementById('tagLabelPersonal');
+            const i = document.getElementById('tagLabelImportant');
+            const h = document.getElementById('tagLabelHealth');
+            
+            if (w) w.textContent = customTags.work;
+            if (p) p.textContent = customTags.personal;
+            if (i) i.textContent = customTags.important;
+            if (h) h.textContent = customTags.health;
+        }
+
+        function openTagModal() {
+            const modal = document.getElementById('tagModal');
+            document.getElementById('editTagWork').value = customTags.work;
+            document.getElementById('editTagPersonal').value = customTags.personal;
+            document.getElementById('editTagImportant').value = customTags.important;
+            document.getElementById('editTagHealth').value = customTags.health;
+            
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.firstElementChild.classList.remove('scale-95');
+                modal.firstElementChild.classList.add('scale-100');
+            }, 50);
+        }
+
+        function closeTagModal() {
+            const modal = document.getElementById('tagModal');
+            modal.firstElementChild.classList.remove('scale-100');
+            modal.firstElementChild.classList.add('scale-95');
+            setTimeout(() => { modal.classList.add('hidden'); }, 150);
+        }
+
+        function saveTags() {
+            customTags.work = document.getElementById('editTagWork').value.trim() || '工作';
+            customTags.personal = document.getElementById('editTagPersonal').value.trim() || '個人';
+            customTags.important = document.getElementById('editTagImportant').value.trim() || '重要';
+            customTags.health = document.getElementById('editTagHealth').value.trim() || '健康';
+            
+            updateTagLabels();
+            saveAllData();
+            closeTagModal();
+            showToast('✅ 標籤名稱已更新！', 'success');
+            
+            renderQuickPreview();
+            renderWeekView();
+            renderAgendaTimeline();
+            renderAgendaTasksAndScore();
+        }
+
+        function toggleTimeInputs() {
+            const isAllDay = document.getElementById('eventIsAllDay').checked;
+            const container = document.getElementById('timeInputsContainer');
+            const idealStart = document.getElementById('idealStartTime');
+            const idealEnd = document.getElementById('idealEndTime');
+            
+            if (isAllDay) {
+                container.classList.add('opacity-50', 'pointer-events-none', 'h-0', 'overflow-hidden');
+                container.classList.remove('h-auto');
+                idealStart.required = false;
+                idealEnd.required = false;
+            } else {
+                container.classList.remove('opacity-50', 'pointer-events-none', 'h-0', 'overflow-hidden');
+                container.classList.add('h-auto');
+                idealStart.required = true;
+                idealEnd.required = true;
+            }
+        }
+
+        function getMonday(d) {
+            d = new Date(d);
+            var day = d.getDay(),
+                diff = d.getDate() - day + (day == 0 ? -6 : 1); 
+            return new Date(d.getFullYear(), d.getMonth(), diff);
+        }
+
+        // --- 想做的事 (Bucket List) ---
+        function renderBucketList() {
+            const timeframes = ['year', 'month', 'week'];
+            
+            timeframes.forEach(tf => {
+                const container = document.getElementById(`bucketList${tf.charAt(0).toUpperCase() + tf.slice(1)}`);
+                if (!container) return;
+                container.innerHTML = '';
+                
+                const items = bucketItems.filter(i => i.timeframe === tf);
+                
+                if(items.length === 0) {
+                    container.innerHTML = `<div class="text-center text-xs text-slate-400 dark:text-zinc-500 py-6 font-medium border-2 border-dashed border-slate-200 dark:border-zinc-800 rounded-xl">尚無目標，在上方輸入並新增吧！</div>`;
+                    return;
+                }
+
+                items.forEach(item => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'bg-slate-50 dark:bg-zinc-800/50 rounded-xl p-3 sm:p-4 border border-slate-100 dark:border-zinc-700/50 relative group transition-all shadow-sm';
+                    
+                    let subItemsHtml = item.subItems.map(sub => `
+                        <div class="flex items-start gap-2 mt-2 group/sub transition-all">
+                            <input type="checkbox" ${sub.completed ? 'checked' : ''} onchange="toggleBucketSubItem('${item.id}', '${sub.id}')" class="mt-0.5 w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 dark:border-zinc-600 text-appleBlue focus:ring-0 cursor-pointer transition-all">
+                            <span class="flex-1 text-[11px] sm:text-xs font-medium leading-snug ${sub.completed ? 'line-through text-slate-400 dark:text-zinc-500' : 'text-slate-700 dark:text-zinc-200'} transition-all">${sub.text}</span>
+                            <button onclick="deleteBucketSubItem('${item.id}', '${sub.id}')" class="opacity-0 group-hover/sub:opacity-100 text-slate-400 hover:text-appleRed transition-opacity p-0.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                        </div>
+                    `).join('');
+
+                    let dotColor = 'bg-appleBlue';
+                    if(tf === 'year') dotColor = 'bg-appleRed';
+                    if(tf === 'week') dotColor = 'bg-appleGreen';
+
+                    itemDiv.innerHTML = `
+                        <div class="flex items-start justify-between mb-3 border-b border-slate-200 dark:border-zinc-700/50 pb-2">
+                            <span class="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                                <div class="w-2 h-2 rounded-full ${dotColor}"></div> ${item.text}
+                            </span>
+                            <button onclick="deleteBucketItem('${item.id}')" class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-appleRed transition-opacity p-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+                        </div>
+                        <div class="pl-1 sm:pl-4 space-y-1 mb-3">
+                            ${subItemsHtml}
+                        </div>
+                        <div class="pl-1 sm:pl-4 mt-2 flex items-center gap-2">
+                            <input type="text" id="subInput-${item.id}" placeholder="➕ 新增子任務行動..." class="flex-1 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 focus:border-appleBlue dark:focus:border-appleBlue rounded-lg px-2 py-1.5 text-[10px] sm:text-xs focus:outline-none transition-colors text-slate-700 dark:text-zinc-300" onkeypress="if(event.key==='Enter') addBucketSubItem('${item.id}')">
+                            <button onclick="addBucketSubItem('${item.id}')" class="bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700 rounded-lg p-1.5 transition-colors"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg></button>
+                        </div>
+                    `;
+                    container.appendChild(itemDiv);
+                });
+            });
+        }
+
+        function addBucketItem(timeframe) {
+            const inputId = `bucketInput${timeframe.charAt(0).toUpperCase() + timeframe.slice(1)}`;
+            const input = document.getElementById(inputId);
+            const text = input.value.trim();
+            if (!text) return;
+            
+            bucketItems.push({
+                id: Date.now().toString(),
+                timeframe: timeframe,
+                text: text,
+                subItems: []
+            });
+            input.value = '';
+            saveAllData();
+            renderBucketList();
+        }
+
+        function deleteBucketItem(id) {
+            showConfirm('刪除大目標', '確定要刪除這個目標及其所有子任務嗎？', () => {
+                bucketItems = bucketItems.filter(i => i.id !== id);
+                saveAllData();
+                renderBucketList();
+            });
+        }
+
+        function addBucketSubItem(itemId) {
+            const input = document.getElementById(`subInput-${itemId}`);
+            const text = input.value.trim();
+            if (!text) return;
+
+            const item = bucketItems.find(i => i.id === itemId);
+            if (item) {
+                item.subItems.push({
+                    id: Date.now().toString(),
+                    text: text,
+                    completed: false
+                });
+                saveAllData();
+                renderBucketList();
+            }
+        }
+
+        function toggleBucketSubItem(itemId, subId) {
+            const item = bucketItems.find(i => i.id === itemId);
+            if (item) {
+                const sub = item.subItems.find(s => s.id === subId);
+                if (sub) {
+                    sub.completed = !sub.completed;
+                    saveAllData();
+                    renderBucketList();
+                }
+            }
+        }
+
+        function deleteBucketSubItem(itemId, subId) {
+            const item = bucketItems.find(i => i.id === itemId);
+            if (item) {
+                item.subItems = item.subItems.filter(s => s.id !== subId);
+                saveAllData();
+                renderBucketList();
+            }
+        }
+
+        // --- 習慣追蹤 (Habit Grid) ---
+        function renderHabitGrid() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            habitMonthDisplay.textContent = `${year} 年 ${month + 1} 月`;
+            
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const weekDaysStr = ['日', '一', '二', '三', '四', '五', '六'];
+            
+            let headerHtml = `<th class="sticky left-0 z-30 w-32 sm:w-48 bg-slate-100 dark:bg-zinc-800 p-3 text-xs sm:text-sm font-extrabold text-slate-600 dark:text-zinc-300 tracking-wider shadow-[2px_0_5px_rgba(0,0,0,0.05)]">習慣目標</th>`;
+            for (let i = 1; i <= daysInMonth; i++) {
+                const loopDate = new Date(year, month, i);
+                const dayOfWeek = loopDate.getDay();
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                const isToday = formatDateString(loopDate) === formatDateString(new Date());
+                
+                let thClass = "p-2 min-w-[36px] sm:min-w-[44px] text-center";
+                if (isToday) thClass += " bg-appleBlue/10 text-appleBlue font-bold";
+                else if (isWeekend) thClass += " bg-yellow-50/50 dark:bg-yellow-900/10 text-yellow-600 dark:text-yellow-500";
+                
+                headerHtml += `
+                    <th class="${thClass}">
+                        <div class="flex flex-col items-center">
+                            <span class="text-[9px] font-medium opacity-60 mb-0.5">${weekDaysStr[dayOfWeek]}</span>
+                            <span class="text-xs sm:text-sm ${isToday ? 'font-black' : 'font-semibold'}">${i}</span>
+                        </div>
+                    </th>
+                `;
+            }
+            habitTableHeader.innerHTML = headerHtml;
+
+            habitTableBody.innerHTML = '';
+            if (habits.length === 0) {
+                habitTableBody.innerHTML = `<tr><td colspan="${daysInMonth + 1}" class="text-center py-10 text-sm text-slate-400">尚未建立任何習慣，點擊上方按鈕新增！</td></tr>`;
+                return;
+            }
+
+            habits.forEach(habit => {
+                const tr = document.createElement('tr');
+                const isSelected = selectedHabitId === habit.id;
+                tr.className = `group transition-colors ${isSelected ? 'bg-slate-50 dark:bg-zinc-800/50' : 'hover:bg-slate-50/50 dark:hover:bg-zinc-800/30'}`;
+                
+                let rowHtml = `
+                    <td class="sticky left-0 z-20 w-32 sm:w-48 bg-white dark:bg-zinc-900 p-3 shadow-[2px_0_5px_rgba(0,0,0,0.02)] cursor-pointer border-r border-slate-200 dark:border-zinc-800 transition-colors group-hover:bg-slate-50 dark:group-hover:bg-zinc-800/50" onclick="selectHabit('${habit.id}')">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-xs sm:text-sm truncate pr-2 ${isSelected ? 'text-appleBlue' : ''}">${habit.name}</span>
+                            <button class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-appleRed transition-opacity p-1" onclick="deleteHabit(event, '${habit.id}')">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                
+                if (!habitLogs[habit.id]) habitLogs[habit.id] = {};
+                
+                for (let i = 1; i <= daysInMonth; i++) {
+                    const loopDate = new Date(year, month, i);
+                    const dateStr = formatDateString(loopDate);
+                    const dayOfWeek = loopDate.getDay();
+                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                    const isChecked = habitLogs[habit.id][dateStr] === true;
+                    const isToday = dateStr === formatDateString(new Date());
+                    
+                    let tdClass = "p-1.5 text-center border-l border-slate-100 dark:border-zinc-800/50";
+                    if (isWeekend && !isChecked) tdClass += " bg-yellow-50/20 dark:bg-yellow-900/5";
+                    if (isToday) tdClass += " bg-appleBlue/5";
+                    
+                    rowHtml += `<td class="${tdClass}" data-date="${dateStr}"></td>`;
+                }
+                tr.innerHTML = rowHtml;
+                
+                const cells = tr.querySelectorAll('td[data-date]');
+                cells.forEach(cell => {
+                    const dateStr = cell.getAttribute('data-date');
+                    const isChecked = habitLogs[habit.id][dateStr] === true;
+                    
+                    cell.innerHTML = `
+                        <div class="habit-cell mx-auto w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl border-2 flex items-center justify-center cursor-pointer ${isChecked ? 'bg-appleGreen border-appleGreen text-white shadow-md shadow-appleGreen/20' : 'border-slate-200 dark:border-zinc-700 hover:border-appleGreen/50 text-transparent'}">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                        </div>
+                    `;
+                    
+                    cell.addEventListener('click', () => {
+                        const box = cell.firstElementChild;
+                        if (habitLogs[habit.id][dateStr]) {
+                            delete habitLogs[habit.id][dateStr]; 
+                            box.className = `habit-cell mx-auto w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl border-2 flex items-center justify-center cursor-pointer border-slate-200 dark:border-zinc-700 hover:border-appleGreen/50 text-transparent`;
+                        } else {
+                            habitLogs[habit.id][dateStr] = true; 
+                            box.className = `habit-cell mx-auto w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl border-2 flex items-center justify-center cursor-pointer bg-appleGreen border-appleGreen text-white shadow-md shadow-appleGreen/20`;
+                        }
+                        saveAllData();
+                        if (selectedHabitId === habit.id) renderHabitStats(); 
+                    });
+                });
+
+                habitTableBody.appendChild(tr);
+            });
+        }
+
+        function selectHabit(id) {
+            selectedHabitId = id;
+            renderHabitGrid(); 
+            renderHabitStats(); 
+        }
+
+        function deleteHabit(e, id) {
+            e.stopPropagation();
+            showConfirm('刪除習慣', '確定要刪除這個追蹤項目嗎？所有歷史打卡紀錄也會一併消失。', () => {
+                habits = habits.filter(h => h.id !== id);
+                delete habitLogs[id];
+                if (selectedHabitId === id) selectedHabitId = habits.length > 0 ? habits[0].id : null;
+                saveAllData();
+                renderHabitGrid();
+                renderHabitStats();
+            });
+        }
+
+        function renderHabitStats() {
+            if (!selectedHabitId || habits.length === 0) {
+                statHabitSelector.textContent = '請在左側建立或選擇一個習慣';
+                statCurrentStreak.textContent = '0';
+                statMonthCount.textContent = '0';
+                statMonthTotal.textContent = '30';
+                statMonthPercent.textContent = '0%';
+                statMonthRing.setAttribute('stroke-dasharray', `0, 100`);
+                statHistoryList.innerHTML = `<div class="text-xs text-slate-400 text-center py-4">尚無數據</div>`;
+                return;
+            }
+
+            const habit = habits.find(h => h.id === selectedHabitId);
+            const logs = habitLogs[selectedHabitId] || {};
+            statHabitSelector.textContent = habit.name;
+
+            let streak = 0;
+            let tempDate = new Date(NOW_REAL_TIME);
+            let dateStr = formatDateString(tempDate);
+            
+            if (!logs[dateStr]) {
+                tempDate.setDate(tempDate.getDate() - 1);
+                dateStr = formatDateString(tempDate);
+            }
+            
+            while (logs[dateStr]) {
+                streak++;
+                tempDate.setDate(tempDate.getDate() - 1);
+                dateStr = formatDateString(tempDate);
+            }
+            statCurrentStreak.textContent = streak;
+
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            let monthCount = 0;
+            
+            for (let i = 1; i <= daysInMonth; i++) {
+                if (logs[formatDateString(new Date(year, month, i))]) monthCount++;
+            }
+            
+            const percent = Math.round((monthCount / daysInMonth) * 100);
+            statMonthCount.textContent = monthCount;
+            statMonthTotal.textContent = daysInMonth;
+            statMonthPercent.textContent = `${percent}%`;
+            statMonthRing.setAttribute('stroke-dasharray', `${percent}, 100`);
+
+            statHistoryList.innerHTML = '';
+            for (let mOffset = 0; mOffset < 3; mOffset++) {
+                const targetDate = new Date(year, month - mOffset, 1);
+                const tYear = targetDate.getFullYear();
+                const tMonth = targetDate.getMonth();
+                const tDays = new Date(tYear, tMonth + 1, 0).getDate();
+                let tCount = 0;
+                for (let i = 1; i <= tDays; i++) {
+                    if (logs[formatDateString(new Date(tYear, tMonth, i))]) tCount++;
+                }
+                const tPercent = Math.round((tCount / tDays) * 100);
+                
+                statHistoryList.innerHTML += `
+                    <div class="flex items-center gap-3">
+                        <span class="w-12 text-[10px] sm:text-xs font-bold text-slate-500 text-right">${tMonth + 1}月</span>
+                        <div class="flex-1 h-3 sm:h-4 bg-slate-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                            <div class="h-full bg-appleGreen rounded-full transition-all duration-700" style="width: ${tPercent}%"></div>
+                        </div>
+                        <span class="w-8 text-[10px] sm:text-xs font-bold text-slate-700 dark:text-zinc-300 text-right">${tCount}天</span>
+                    </div>
+                `;
+            }
+        }
+
+        // --- 週行事曆視圖 ---
+        function renderWeekView() {
+            weekGrid.innerHTML = '';
+            
+            const endDate = new Date(currentWeekStart);
+            endDate.setDate(endDate.getDate() + 6); 
+            
+            weekDisplay.textContent = `${currentWeekStart.getFullYear()}年${currentWeekStart.getMonth()+1}月${currentWeekStart.getDate()}日 - ${endDate.getMonth()+1}月${endDate.getDate()}日`;
+            
+            const realTodayStr = formatDateString(new Date());
+            weekTodaySubtitle.textContent = `今天：${new Date().getFullYear()}年${new Date().getMonth() + 1}月${new Date().getDate()}日`;
+            
+            const weekDaysStr = ['一', '二', '三', '四', '五', '六', '日'];
+            
+            for(let i=0; i<7; i++) {
+                const currentDay = new Date(currentWeekStart);
+                currentDay.setDate(currentDay.getDate() + i);
+                const dateStr = formatDateString(currentDay);
+                
+                const isToday = realTodayStr === dateStr;
+                
+                const col = document.createElement('div');
+                col.className = `flex-none min-w-[140px] sm:min-w-[180px] lg:w-auto lg:flex-1 flex flex-col h-full min-h-0 bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border ${isToday ? 'border-appleRed border-2' : 'border-slate-200 dark:border-zinc-800'} overflow-hidden shadow-sm flex-shrink-0 snap-center transition-all`;
+                
+                const colHeader = document.createElement('div');
+                colHeader.className = `p-3 sm:p-4 text-center border-b border-slate-100 dark:border-zinc-800 flex flex-col items-center justify-center cursor-pointer transition-colors ${isToday ? 'bg-appleRed/10 text-appleRed' : 'bg-slate-50 dark:bg-zinc-800/50 text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800'}`;
+                colHeader.innerHTML = `
+                    <span class="text-[10px] sm:text-xs font-bold uppercase tracking-widest mb-1">星期${weekDaysStr[i]}</span>
+                    <span class="text-xl sm:text-2xl font-extrabold ${isToday ? 'bg-appleRed text-white w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-lg shadow-appleRed/30' : ''}">${currentDay.getDate()}</span>
+                `;
+                
+                colHeader.addEventListener('click', () => {
+                    selectedDate = new Date(currentDay);
+                    currentDate = new Date(currentDay.getFullYear(), currentDay.getMonth(), 1);
+                    renderCalendar();
+                    renderAgendaTimeline();
+                    renderAgendaTasksAndScore();
+                    renderQuickPreview();
+                    updateTabBadge();
+                    switchTab('agenda');
+                });
+                col.appendChild(colHeader);
+                
+                const colBody = document.createElement('div');
+                colBody.className = 'flex-1 min-h-0 p-2 sm:p-3 overflow-y-auto custom-scrollbar flex flex-col gap-2.5';
+                
+                const dayEvents = events.filter(e => e.date === dateStr);
+                dayEvents.sort((a, b) => a.idealStartTime.localeCompare(b.idealStartTime));
+                
+                if (dayEvents.length === 0) {
+                     colBody.innerHTML = `<div class="h-full flex items-center justify-center text-[10px] sm:text-xs text-slate-400 dark:text-zinc-600 font-medium opacity-60">沒有排程</div>`;
+                } else {
+                    dayEvents.forEach(ev => {
+                        const colorTheme = categoryColors[ev.category] || categoryColors.work;
+                        const evBlock = document.createElement('div');
+                        const isCompleted = ev.actualStartTime && ev.actualEndTime;
+                        const opacityClass = isCompleted ? 'opacity-70' : 'opacity-100';
+
+                        evBlock.className = `flex-shrink-0 p-2.5 rounded-xl ${colorTheme.bg} border-l-4 ${colorTheme.border} cursor-pointer hover:scale-[1.03] transition-transform shadow-sm relative overflow-hidden ${opacityClass}`;
+                        evBlock.innerHTML = `
+                            <div class="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-zinc-100 line-clamp-2 leading-snug">${ev.title}</div>
+                            <div class="flex items-center justify-between mt-1.5">
+                                <span class="text-[9px] sm:text-[10px] ${colorTheme.text} font-bold">${ev.isAllDay ? '全天任務' : ev.idealStartTime}</span>
+                                ${isCompleted ? `<span class="text-[8px] text-appleGreen bg-appleGreen/10 px-1 rounded font-bold">已完成</span>` : ''}
+                            </div>
+                        `;
+                        evBlock.addEventListener('click', () => openModal(ev));
+                        colBody.appendChild(evBlock);
+                    });
+                }
+                
+                col.appendChild(colBody);
+                weekGrid.appendChild(col);
+            }
+        }
+
+        function renderQuickPreview() {
+            quickPreviewList.innerHTML = '';
+            const selectedStr = formatDateString(selectedDate);
+            quickPreviewTitle.textContent = `${selectedDate.getMonth() + 1}月${selectedDate.getDate()}日 的行程`;
+            
+            const dayEvents = events.filter(e => e.date === selectedStr);
+            dayEvents.sort((a, b) => a.idealStartTime.localeCompare(b.idealStartTime));
+
+            if (dayEvents.length === 0) {
+                quickPreviewList.innerHTML = `<div class="h-full min-h-[200px] flex flex-col items-center justify-center py-10 text-slate-400 dark:text-zinc-500 border-2 border-dashed border-slate-200 dark:border-zinc-800/80 rounded-3xl"><svg class="w-12 h-12 mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p class="text-sm font-bold">這天沒有安排任何行程喔！</p><p class="text-xs mt-1">點選上方新增，或使用 AI 助理排程</p></div>`;
+                return;
+            }
+
+            dayEvents.forEach(ev => {
+                const colorTheme = categoryColors[ev.category] || categoryColors.work;
+                const previewItem = document.createElement('div');
+                previewItem.className = `flex-shrink-0 p-4 rounded-2xl ${colorTheme.bg} flex items-center justify-between border border-transparent hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shadow-sm`;
+                
+                const isCompleted = ev.actualStartTime && ev.actualEndTime;
+                const statusHtml = isCompleted ? `<span class="text-[10px] ml-2 text-appleGreen border border-appleGreen rounded px-1.5 py-0.5">已執行</span>` : '';
+
+                previewItem.innerHTML = `
+                    <div class="flex items-center gap-4 overflow-hidden">
+                        <div class="w-1.5 h-10 rounded-full bg-${colorTheme.border.split('-')[1]} opacity-80 shadow-sm"></div>
+                        <div class="overflow-hidden">
+                            <h4 class="font-bold text-slate-900 dark:text-white text-sm sm:text-base truncate flex items-center">${ev.title} ${statusHtml}</h4>
+                            <p class="text-[11px] sm:text-xs text-slate-500 dark:text-zinc-400 mt-1 font-medium tracking-wide">${ev.isAllDay ? '🌞 全天待辦任務' : `預定 ${ev.idealStartTime} - ${ev.idealEndTime}`}</p>
+                        </div>
+                    </div>
+                    <span class="text-[10px] font-extrabold px-2 py-1 rounded-lg ${colorTheme.text} bg-white/70 dark:bg-zinc-900/70 shadow-sm flex-shrink-0 border border-white/20 dark:border-zinc-700/50">
+                        ${customTags[ev.category] || '標籤'}
+                    </span>
+                `;
+                previewItem.addEventListener('click', (e) => { e.stopPropagation(); openModal(ev); });
+                quickPreviewList.appendChild(previewItem);
+            });
+        }
+
+        function renderCalendar() {
+            calendarGrid.innerHTML = '';
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+
+            monthDisplay.textContent = `${year} 年 ${month + 1} 月`;
+            const realToday = new Date();
+            const todaySubtitle = document.getElementById('todaySubtitle');
+            if (todaySubtitle) todaySubtitle.textContent = `今天：${realToday.getFullYear()}年${realToday.getMonth() + 1}月${realToday.getDate()}日`;
+
+            const firstDayIndex = new Date(year, month, 1).getDay();
+            const totalDays = new Date(year, month + 1, 0).getDate();
+            const prevTotalDays = new Date(year, month, 0).getDate();
+
+            for (let i = firstDayIndex; i > 0; i--) createDayCell(prevTotalDays - i + 1, new Date(year, month - 1, prevTotalDays - i + 1), true);
+            for (let i = 1; i <= totalDays; i++) createDayCell(i, new Date(year, month, i), false);
+            const totalRenderedCells = firstDayIndex + totalDays;
+            for (let i = 1; i <= 42 - totalRenderedCells; i++) createDayCell(i, new Date(year, month + 1, i), true);
+        }
+
+        function createDayCell(dayNumber, dateObj, isOtherMonth) {
+            const cell = document.createElement('div');
+            cell.className = `min-h-[60px] sm:min-h-[85px] lg:min-h-[100px] p-1.5 sm:p-2 border border-slate-200/50 dark:border-zinc-800/50 rounded-2xl sm:rounded-3xl cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-all flex flex-col justify-between relative shadow-sm hover:shadow-md bg-white dark:bg-zinc-900`;
+
+            const dateStr = formatDateString(dateObj);
+            const realTodayStr = formatDateString(new Date());
+            const isToday = realTodayStr === dateStr;
+            const isSelected = formatDateString(selectedDate) === dateStr;
+
+            const numSpan = document.createElement('span');
+            numSpan.className = `w-7 h-7 sm:w-9 sm:h-9 flex items-center justify-center text-xs sm:text-base font-bold rounded-full transition-all`;
+            numSpan.textContent = dayNumber;
+
+            if (isToday) numSpan.classList.add('bg-appleRed', 'text-white', 'shadow-lg', 'shadow-appleRed/30');
+            else if (isSelected) numSpan.classList.add('bg-appleBlue', 'text-white', 'shadow-lg', 'shadow-appleBlue/30');
+            else if (isOtherMonth) numSpan.classList.add('text-slate-300', 'dark:text-zinc-600');
+            else numSpan.classList.add('text-slate-700', 'dark:text-zinc-200');
+
+            cell.appendChild(numSpan);
+
+            const dayEvents = events.filter(e => e.date === dateStr);
+            const dotsContainer = document.createElement('div');
+            dotsContainer.className = "flex gap-1 justify-center py-1 sm:py-1.5 min-h-[10px]";
+            
+            dayEvents.slice(0, 4).forEach(ev => {
+                const colorTheme = categoryColors[ev.category] || categoryColors.work;
+                const dot = document.createElement('span');
+                if(ev.actualStartTime && ev.actualEndTime) dot.className = `w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-${colorTheme.border.split('-')[1]} shadow-sm`;
+                else dot.className = `w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full border-[1.5px] border-${colorTheme.border.split('-')[1]}`;
+                dotsContainer.appendChild(dot);
+            });
+            cell.appendChild(dotsContainer);
+
+            cell.addEventListener('click', (e) => {
+                const currentTime = new Date().getTime();
+                const tapLength = currentTime - globalLastClickTime;
+                const isSameDate = (globalLastClickedDateStr === dateStr);
+                globalLastClickTime = currentTime;
+                globalLastClickedDateStr = dateStr;
+
+                if (isSameDate && tapLength < 300 && tapLength > 0) {
+                    e.preventDefault();
+                    switchTab('agenda');
+                    showToast(`📅 已進入 ${selectedDate.getMonth() + 1}月${selectedDate.getDate()}日 的完整日程表`, 'success');
+                    return; 
+                }
+                selectedDate = dateObj;
+                currentDate = new Date(dateObj.getFullYear(), dateObj.getMonth(), 1);
+                renderCalendar();
+                renderAgendaTimeline();
+                renderAgendaTasksAndScore();
+                renderQuickPreview(); 
+                updateTabBadge();
+                
+                if (window.innerWidth < 1024) {
+                     const calendarScrollArea = document.querySelector('#calendarView > div:first-child');
+                     if(calendarScrollArea) calendarScrollArea.scrollTo({top: 0, behavior: 'smooth'});
+                }
+            });
+            calendarGrid.appendChild(cell);
+        }
+
+        // --- UI 渲染邏輯：右半部四象限、任務池與評分 ---
+        function renderAgendaTasksAndScore() {
+            const selectedStr = formatDateString(selectedDate);
+            const dayTasks = tasks.filter(t => t.date === selectedStr);
+            const dayAllDayEvents = events.filter(e => e.date === selectedStr && e.isAllDay);
+
+            ['q1', 'q2', 'q3', 'q4', 'pool'].forEach(q => {
+                const container = document.querySelector(`#${q === 'pool' ? 'taskPool' : q} .task-container`);
+                if(container) container.innerHTML = '';
+            });
+
+            dayTasks.forEach(task => {
+                const block = document.createElement('div');
+                block.className = `flex-shrink-0 bg-white dark:bg-zinc-800 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 shadow-sm text-[10px] sm:text-xs font-bold text-slate-700 dark:text-zinc-200 cursor-grab active:cursor-grabbing flex justify-between items-center group`;
+                block.draggable = true;
+                block.id = `task-${task.id}`;
+                
+                block.innerHTML = `
+                    <span class="truncate pr-2">${task.text}</span>
+                    <button class="text-slate-400 hover:text-appleRed opacity-0 group-hover:opacity-100 transition-opacity" onclick="deleteTask('${task.id}')">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                `;
+
+                block.addEventListener('dragstart', (e) => {
+                    draggedTaskId = block.id;
+                    e.dataTransfer.effectAllowed = 'move';
+                    setTimeout(() => block.classList.add('dragging'), 0);
+                });
+                block.addEventListener('dragend', (e) => {
+                    block.classList.remove('dragging');
+                    draggedTaskId = null;
+                    document.querySelectorAll('.dropzone').forEach(el => el.classList.remove('drag-over'));
+                });
+
+                const container = document.querySelector(`#${task.quadrant === 'pool' ? 'taskPool' : task.quadrant} .task-container`);
+                if(container) container.appendChild(block);
+            });
+
+            dayAllDayEvents.forEach(ev => {
+                const colorTheme = categoryColors[ev.category] || categoryColors.work;
+                const block = document.createElement('div');
+                block.className = `flex-shrink-0 bg-white dark:bg-zinc-800 px-2 py-1.5 rounded-lg border-y border-r border-slate-200 dark:border-zinc-700 border-l-4 ${colorTheme.border} shadow-sm text-[10px] sm:text-xs font-bold text-slate-700 dark:text-zinc-200 cursor-grab active:cursor-grabbing flex justify-between items-center group`;
+                block.draggable = true;
+                block.id = `event-${ev.id}`;
+                
+                block.innerHTML = `
+                    <span class="truncate pr-2">${ev.title}</span>
+                    <button class="text-slate-400 hover:text-appleBlue opacity-0 group-hover:opacity-100 transition-opacity" onclick="openModalById('${ev.id}')">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+                    </button>
+                `;
+
+                block.addEventListener('dragstart', (e) => {
+                    draggedTaskId = block.id;
+                    e.dataTransfer.effectAllowed = 'move';
+                    setTimeout(() => block.classList.add('dragging'), 0);
+                });
+                block.addEventListener('dragend', (e) => {
+                    block.classList.remove('dragging');
+                    draggedTaskId = null;
+                    document.querySelectorAll('.dropzone').forEach(el => el.classList.remove('drag-over'));
+                });
+
+                const quad = ev.quadrant || 'pool';
+                const container = document.querySelector(`#${quad === 'pool' ? 'taskPool' : quad} .task-container`);
+                if(container) container.appendChild(block);
+            });
+
+            scoreContainer.innerHTML = '';
+            const currentScore = dailyScores[selectedStr] || 0;
+            for (let i = 1; i <= 10; i++) {
+                const btn = document.createElement('button');
+                const isSelected = i === currentScore;
+                btn.className = `flex-1 py-1 sm:py-1.5 mx-0.5 text-xs sm:text-sm font-bold rounded-lg transition-all ${isSelected ? 'bg-appleYellow text-white shadow-md transform scale-110' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-zinc-700'}`;
+                btn.textContent = i;
+                btn.addEventListener('click', () => {
+                    dailyScores[selectedStr] = i;
+                    saveAllData();
+                    renderAgendaTasksAndScore(); 
+                    showToast(`⭐️ 成功為今日打 ${i} 分！`, 'success');
+                });
+                scoreContainer.appendChild(btn);
+            }
+        }
+
+        // --- 拖曳放置 (Drag & Drop) 事件設定 ---
+        function setupDragAndDrop() {
+            const dropzones = document.querySelectorAll('.dropzone');
+            
+            dropzones.forEach(zone => {
+                zone.addEventListener('dragover', (e) => {
+                    e.preventDefault(); 
+                    e.dataTransfer.dropEffect = 'move';
+                });
+                
+                zone.addEventListener('dragenter', (e) => {
+                    e.preventDefault();
+                    if(draggedTaskId) zone.classList.add('drag-over');
+                });
+                
+                zone.addEventListener('dragleave', (e) => {
+                    if (e.relatedTarget !== null && !zone.contains(e.relatedTarget)) {
+                        zone.classList.remove('drag-over');
+                    }
+                });
+                
+                zone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    zone.classList.remove('drag-over');
+                    
+                    if (draggedTaskId) {
+                        if (draggedTaskId.startsWith('task-')) {
+                            const tId = draggedTaskId.replace('task-', '');
+                            const taskIndex = tasks.findIndex(t => t.id === tId);
+                            if (taskIndex !== -1) tasks[taskIndex].quadrant = zone.dataset.quadrant;
+                        } else if (draggedTaskId.startsWith('event-')) {
+                            const eId = draggedTaskId.replace('event-', '');
+                            const evIndex = events.findIndex(e => e.id === eId);
+                            if (evIndex !== -1) events[evIndex].quadrant = zone.dataset.quadrant;
+                        }
+                        saveAllData();
+                        renderAgendaTasksAndScore();
+                    }
+                });
+            });
+        }
+
+        function addNewTask() {
+            const text = newTaskInput.value.trim();
+            if (!text) return;
+            const dateStr = formatDateString(selectedDate);
+            tasks.push({ id: Date.now().toString(), text, date: dateStr, quadrant: 'pool' });
+            newTaskInput.value = '';
+            saveAllData();
+            renderAgendaTasksAndScore();
+        }
+
+        function deleteTask(id) {
+            tasks = tasks.filter(t => t.id !== id);
+            saveAllData();
+            renderAgendaTasksAndScore();
+        }
+
+        // --- UI 渲染邏輯：右側 24小時雙軌時間軸 ---
+        function renderAgendaTimeline() {
+            const timelineWrapper = document.getElementById('timelineWrapper');
+            const container = document.getElementById('eventListContainer');
+            timelineWrapper.innerHTML = ''; 
+            timelineWrapper.style.height = `${24 * PIXEL_PER_HOUR}px`; 
+            
+            const selectedStr = formatDateString(selectedDate);
+            focusedDateLabel.textContent = `${selectedDate.getMonth() + 1} 月 ${selectedDate.getDate()} 日`;
+
+            for (let i = 0; i <= 24; i++) {
+                const topPx = i * PIXEL_PER_HOUR;
+                const line = document.createElement('div');
+                line.className = 'absolute w-full border-t border-slate-200 dark:border-zinc-800 flex items-start z-0 pointer-events-none';
+                line.style.top = `${topPx}px`;
+                line.innerHTML = `<span class="text-[10px] sm:text-xs text-slate-400 font-bold pl-2 -mt-2.5 sm:-mt-3 bg-white dark:bg-zinc-900 pr-2 w-14 sm:w-20 text-right">${String(i).padStart(2, '0')}:00</span>`;
+                timelineWrapper.appendChild(line);
+            }
+
+            const centerLine = document.createElement('div');
+            centerLine.className = 'absolute top-0 bottom-0 border-l-[1.5px] border-dashed border-slate-300 dark:border-zinc-700 z-0 pointer-events-none left-[calc(50%+28px)] sm:left-[calc(50%+40px)]';
+            timelineWrapper.appendChild(centerLine);
+
+            const dayEvents = events.filter(e => e.date === selectedStr && !e.isAllDay);
+            let earliestMinute = 1440;
+
+            dayEvents.forEach(ev => {
+                const colorTheme = categoryColors[ev.category] || categoryColors.work;
+                const idealBox = createTimeBlock(ev, 'ideal', colorTheme);
+                if (idealBox) {
+                    timelineWrapper.appendChild(idealBox);
+                    const startMin = timeStrToMinutes(ev.idealStartTime);
+                    if(startMin < earliestMinute) earliestMinute = startMin;
+                }
+                if (ev.actualStartTime && ev.actualEndTime) {
+                    const actualBox = createTimeBlock(ev, 'actual', colorTheme);
+                    if (actualBox) timelineWrapper.appendChild(actualBox);
+                }
+            });
+
+            updateCurrentTimeLine();
+
+            const realTodayStr = formatDateString(new Date());
+            setTimeout(() => {
+                if (selectedStr === realTodayStr) {
+                    const now = new Date();
+                    const nowPx = ((now.getHours() * 60) + now.getMinutes()) * PIXEL_PER_MIN;
+                    container.scrollTo({ top: Math.max(0, nowPx - 100), behavior: 'smooth' });
+                } else if (earliestMinute !== 1440) {
+                    container.scrollTo({ top: Math.max(0, (earliestMinute * PIXEL_PER_MIN) - 60), behavior: 'smooth' });
+                } else {
+                    container.scrollTo({ top: 8 * PIXEL_PER_HOUR, behavior: 'smooth' });
+                }
+            }, 100);
+        }
+
+        function createTimeBlock(ev, type, colorTheme) {
+            const startTimeStr = type === 'ideal' ? ev.idealStartTime : ev.actualStartTime;
+            const endTimeStr = type === 'ideal' ? ev.idealEndTime : ev.actualEndTime;
+            if (!startTimeStr || !endTimeStr) return null;
+
+            const startPx = timeStrToMinutes(startTimeStr) * PIXEL_PER_MIN;
+            const endPx = timeStrToMinutes(endTimeStr) * PIXEL_PER_MIN;
+            let heightPx = endPx - startPx;
+            
+            if (heightPx < 14) heightPx = 14; 
+            if (startPx + heightPx > 24 * PIXEL_PER_HOUR) heightPx = (24 * PIXEL_PER_HOUR) - startPx;
+
+            const block = document.createElement('div');
+            const horizontalClass = type === 'ideal' 
+                ? 'left-[60px] sm:left-[88px] w-[calc(50%-36px)] sm:w-[calc(50%-56px)]' 
+                : 'left-[calc(50%+32px)] sm:left-[calc(50%+48px)] w-[calc(50%-36px)] sm:w-[calc(50%-56px)]';
+            const bgClass = type === 'ideal' ? colorTheme.bg : `${colorTheme.bg} opacity-95`;
+            const borderClass = `border-l-[4px] ${colorTheme.border}`;
+
+            block.className = `timeline-block absolute rounded-xl p-2 sm:p-3 overflow-hidden shadow-sm cursor-pointer border border-white/60 dark:border-zinc-700/50 z-10 flex flex-col justify-start ${horizontalClass} ${bgClass} ${borderClass}`;
+            block.style.top = `${startPx}px`;
+            block.style.height = `${heightPx}px`;
+
+            block.innerHTML = `
+                <div class="font-bold text-slate-900 dark:text-white text-[11px] sm:text-sm leading-tight line-clamp-1 sm:line-clamp-2">${ev.title}</div>
+                ${heightPx > 35 ? `<div class="text-[9px] sm:text-xs ${colorTheme.text} font-bold mt-1 tracking-wide">${startTimeStr} - ${endTimeStr}</div>` : ''}
+            `;
+            block.addEventListener('click', () => openModal(ev));
+            return block;
+        }
+
+        function updateCurrentTimeLine() {
+            const timelineWrapper = document.getElementById('timelineWrapper');
+            if (!timelineWrapper) return;
+            const oldLine = document.getElementById('currentTimeMarker');
+            if (oldLine) oldLine.remove();
+
+            const realTodayStr = formatDateString(new Date());
+            const selectedStr = formatDateString(selectedDate);
+            
+            if (realTodayStr === selectedStr) {
+                const now = new Date();
+                const nowPx = ((now.getHours() * 60) + now.getMinutes()) * PIXEL_PER_MIN;
+
+                const marker = document.createElement('div');
+                marker.id = 'currentTimeMarker';
+                marker.className = 'absolute w-full flex items-center z-20 pointer-events-none';
+                marker.style.top = `${nowPx}px`;
+                
+                marker.innerHTML = `
+                    <div class="bg-appleRed text-white text-[9px] sm:text-xs font-bold px-1.5 py-0.5 rounded-md absolute left-[4px] sm:left-[10px] -translate-y-1/2 shadow-md">${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}</div>
+                    <div class="ml-[56px] sm:ml-[80px] w-[calc(100%-56px)] sm:w-[calc(100%-80px)] h-[2px] bg-appleRed shadow-[0_0_8px_rgba(255,59,48,0.8)]">
+                        <div class="w-2.5 h-2.5 bg-appleRed rounded-full -mt-[4px] -ml-1 shadow-sm"></div>
+                    </div>
+                `;
+                timelineWrapper.appendChild(marker);
+            }
+        }
+
+        function timeStrToMinutes(timeStr) {
+            const [h, m] = timeStr.split(':').map(Number);
+            return h * 60 + m;
+        }
+
+        function openModalById(id) {
+            const ev = events.find(e => e.id === id);
+            if(ev) openModal(ev);
+        }
+
+        function openModal(editingEvent = null) {
+            eventModal.classList.remove('hidden');
+            setTimeout(() => {
+                eventModal.firstElementChild.classList.remove('scale-95');
+                eventModal.firstElementChild.classList.add('scale-100');
+            }, 50);
+
+            const isAllDayCheckbox = document.getElementById('eventIsAllDay');
+
+            if (editingEvent) {
+                document.getElementById('editEventId').value = editingEvent.id;
+                document.getElementById('eventDate').value = editingEvent.date;
+                document.getElementById('eventTitle').value = editingEvent.title;
+                document.getElementById('idealStartTime').value = editingEvent.idealStartTime || '';
+                document.getElementById('idealEndTime').value = editingEvent.idealEndTime || '';
+                document.getElementById('actualStartTime').value = editingEvent.actualStartTime || '';
+                document.getElementById('actualEndTime').value = editingEvent.actualEndTime || '';
+                document.getElementById('eventNotes').value = editingEvent.notes;
+                document.getElementById('modalTitle').textContent = "編輯時間區塊規劃";
+                
+                document.getElementsByName('eventCategory').forEach(radio => { radio.checked = radio.value === editingEvent.category; });
+                deleteEventBtn.classList.remove('hidden');
+                
+                if (isAllDayCheckbox) isAllDayCheckbox.checked = editingEvent.isAllDay === true;
+            } else {
+                eventForm.reset();
+                document.getElementById('editEventId').value = '';
+                document.getElementById('modalTitle').textContent = `新增規劃 (${selectedDate.getMonth() + 1}/${selectedDate.getDate()})`;
+                
+                document.getElementById('eventDate').value = formatDateString(selectedDate);
+                document.getElementById('idealStartTime').value = "10:00";
+                document.getElementById('idealEndTime').value = "11:00";
+                document.getElementById('actualStartTime').value = "";
+                document.getElementById('actualEndTime').value = "";
+
+                deleteEventBtn.classList.add('hidden');
+                if (isAllDayCheckbox) isAllDayCheckbox.checked = false;
+            }
+            toggleTimeInputs(); 
+        }
+
+        function closeModal() {
+            eventModal.firstElementChild.classList.remove('scale-100');
+            eventModal.firstElementChild.classList.add('scale-95');
+            setTimeout(() => { eventModal.classList.add('hidden'); }, 150);
+        }
+
+        function openHabitModal() {
+            habitModal.classList.remove('hidden');
+            setTimeout(() => {
+                habitModal.firstElementChild.classList.remove('scale-95');
+                habitModal.firstElementChild.classList.add('scale-100');
+            }, 50);
+            habitForm.reset();
+        }
+
+        function closeHabitModal() {
+            habitModal.firstElementChild.classList.remove('scale-100');
+            habitModal.firstElementChild.classList.add('scale-95');
+            setTimeout(() => { habitModal.classList.add('hidden'); }, 150);
+        }
+
+        function showConfirm(title, message, callback) {
+            confirmTitle.textContent = title;
+            confirmMessage.textContent = message;
+            confirmActionCallback = callback;
+            confirmModal.classList.remove('hidden');
+            setTimeout(() => {
+                confirmModal.firstElementChild.classList.remove('scale-95');
+                confirmModal.firstElementChild.classList.add('scale-100');
+            }, 50);
+        }
+
+        function closeConfirm() {
+            confirmModal.firstElementChild.classList.remove('scale-100');
+            confirmModal.firstElementChild.classList.add('scale-95');
+            setTimeout(() => { confirmModal.classList.add('hidden'); }, 150);
+            confirmActionCallback = null;
+        }
+
+        // --- 核心事件監聽設定 ---
+        function setupEventListeners() {
+            prevMonthBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() - 1); renderCalendar(); });
+            nextMonthBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() + 1); renderCalendar(); });
+            todayBtn.addEventListener('click', () => {
+                const now = new Date();
+                selectedDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                currentDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+                renderCalendar();
+                renderAgendaTimeline();
+                renderAgendaTasksAndScore();
+                renderQuickPreview(); 
+                updateTabBadge();
+                showToast(`已錨定到 ${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日`, 'success');
+            });
+            
+            // 週視圖事件監聽
+            const prevWeekBtn = document.getElementById('prevWeekBtn');
+            const nextWeekBtn = document.getElementById('nextWeekBtn');
+            const todayWeekBtn = document.getElementById('todayWeekBtn');
+            const globalAddEventBtnWeek = document.getElementById('globalAddEventBtnWeek');
+            
+            if (globalAddEventBtnWeek) globalAddEventBtnWeek.addEventListener('click', () => openModal());
+            
+            if (prevWeekBtn) {
+                prevWeekBtn.addEventListener('click', () => {
+                    currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+                    renderWeekView();
+                });
+            }
+            if (nextWeekBtn) {
+                nextWeekBtn.addEventListener('click', () => {
+                    currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+                    renderWeekView();
+                });
+            }
+            if (todayWeekBtn) {
+                todayWeekBtn.addEventListener('click', () => {
+                    currentWeekStart = getMonday(new Date());
+                    renderWeekView();
+                    showToast('已切換回本週', 'success');
+                });
+            }
+            
+            // 習慣追蹤事件監聽
+            const habitPrevMonthBtn = document.getElementById('habitPrevMonthBtn');
+            const habitNextMonthBtn = document.getElementById('habitNextMonthBtn');
+            const habitTodayBtn = document.getElementById('habitTodayBtn');
+            const addHabitBtn = document.getElementById('addHabitBtn');
+            
+            if (habitPrevMonthBtn) habitPrevMonthBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() - 1); renderHabitGrid(); renderHabitStats(); });
+            if (habitNextMonthBtn) habitNextMonthBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() + 1); renderHabitGrid(); renderHabitStats(); });
+            if (habitTodayBtn) habitTodayBtn.addEventListener('click', () => { 
+                const now = new Date();
+                currentDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                renderHabitGrid(); renderHabitStats();
+            });
+            if (addHabitBtn) addHabitBtn.addEventListener('click', openHabitModal);
+            
+            closeHabitModalBtn.addEventListener('click', closeHabitModal);
+            cancelHabitBtn.addEventListener('click', closeHabitModal);
+            habitModal.addEventListener('click', (e) => { if (e.target === habitModal) closeHabitModal(); });
+            
+            habitForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const name = habitNameInput.value.trim();
+                if(!name) return;
+                const newHabitId = Date.now().toString();
+                habits.push({ id: newHabitId, name });
+                habitLogs[newHabitId] = {};
+                saveAllData();
+                closeHabitModal();
+                selectHabit(newHabitId); 
+                showToast(`🎉 成功新增習慣：${name}`, 'success');
+            });
+
+            sidebarToggleBtn.addEventListener('click', openSidebar);
+            closeSidebarBtn.addEventListener('click', closeSidebar);
+            sidebarOverlay.addEventListener('click', closeSidebar); 
+
+            tabCalendarBtn.addEventListener('click', () => switchTab('calendar'));
+            tabWeekBtn.addEventListener('click', () => switchTab('week')); 
+            tabAgendaBtn.addEventListener('click', () => switchTab('agenda'));
+            tabHabitBtn.addEventListener('click', () => switchTab('habit')); 
+            tabBucketBtn.addEventListener('click', () => switchTab('bucket')); 
+            tabAiBtn.addEventListener('click', () => switchTab('ai'));
+            
+            backToCalendarBtn.addEventListener('click', () => switchTab('calendar'));
+
+            globalAddEventBtn.addEventListener('click', () => openModal());
+            openAddModalBtn.addEventListener('click', () => openModal());
+            closeModalBtn.addEventListener('click', closeModal);
+            eventModal.addEventListener('click', (e) => { if (e.target === eventModal) closeModal(); });
+
+            addTaskBtn.addEventListener('click', addNewTask);
+            newTaskInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') addNewTask(); });
+
+            confirmCancelBtn.addEventListener('click', closeConfirm);
+            confirmConfirmBtn.addEventListener('click', () => {
+                if (confirmActionCallback) confirmActionCallback();
+                closeConfirm();
+            });
+
+            eventForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                
+                const id = document.getElementById('editEventId').value;
+                const dateStr = document.getElementById('eventDate').value;
+                const title = document.getElementById('eventTitle').value.trim();
+                const isAllDay = document.getElementById('eventIsAllDay').checked; 
+                
+                const idealStartTime = isAllDay ? '' : document.getElementById('idealStartTime').value;
+                const idealEndTime = isAllDay ? '' : document.getElementById('idealEndTime').value;
+                const actualStartTime = isAllDay ? '' : document.getElementById('actualStartTime').value;
+                const actualEndTime = isAllDay ? '' : document.getElementById('actualEndTime').value;
+                
+                const notes = document.getElementById('eventNotes').value.trim();
+                const category = document.querySelector('input[name="eventCategory"]:checked').value;
+                
+                if (!isAllDay) {
+                    if (idealStartTime >= idealEndTime) { showToast('⚠️ 理想開始時間不能晚於結束時間！', 'warning'); return; }
+                    if (actualStartTime && actualEndTime && actualStartTime >= actualEndTime) { showToast('⚠️ 實際開始時間不能晚於結束時間！', 'warning'); return; }
+                }
+
+                let prevQuadrant = 'pool';
+                if (id) {
+                    const prevEv = events.find(e => e.id === id);
+                    if (prevEv && prevEv.quadrant) prevQuadrant = prevEv.quadrant;
+                }
+
+                const newEvData = { 
+                    id: id || Date.now().toString(), 
+                    title, date: dateStr, 
+                    isAllDay, quadrant: isAllDay ? prevQuadrant : null,
+                    idealStartTime, idealEndTime, 
+                    actualStartTime, actualEndTime, 
+                    category, notes 
+                };
+
+                if (id) {
+                    events = events.map(ev => ev.id === id ? newEvData : ev);
+                    showToast('✅ 時間區塊已更新！', 'success');
+                } else {
+                    events.push(newEvData);
+                    showToast('🎉 規劃成功寫入！', 'success');
+                }
+                saveAllData();
+                closeModal();
+                
+                const [y, m, d] = dateStr.split('-');
+                selectedDate = new Date(y, m - 1, d);
+                currentDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+                
+                renderCalendar();
+                if (activeTab === 'agenda') {
+                    renderAgendaTimeline();
+                    renderAgendaTasksAndScore();
+                } else if (activeTab === 'week') {
+                    renderWeekView();
+                }
+            });
+
+            deleteEventBtn.addEventListener('click', () => {
+                const id = document.getElementById('editEventId').value;
+                if (id) {
+                    showConfirm('刪除時間區塊', '確定要刪除此項規劃嗎？', () => {
+                        events = events.filter(ev => ev.id !== id);
+                        saveAllData();
+                        showToast('🗑️ 行程已刪除。', 'success');
+                        closeModal();
+                        renderCalendar();
+                        renderAgendaTimeline();
+                    });
+                }
+            });
+
+            themeToggleBtn.addEventListener('click', toggleTheme);
+            toolsBtn.addEventListener('click', (e) => { e.stopPropagation(); toolsDropdown.classList.toggle('hidden'); });
+            document.addEventListener('click', () => toolsDropdown.classList.add('hidden'));
+            exportBtn.addEventListener('click', exportEvents);
+            importFile.addEventListener('change', importEvents);
+            clearAllBtn.addEventListener('click', () => {
+                showConfirm('警告！清空資料', '確定要清除所有存檔資料嗎？', () => {
+                    events = []; tasks = []; dailyScores = {}; habits = []; habitLogs = {}; bucketItems = [];
+                    saveAllData();
+                    showToast('💥 所有資料已徹底清除！', 'success');
+                    renderCalendar();
+                    renderAgendaTimeline();
+                    renderAgendaTasksAndScore();
+                    renderHabitGrid();
+                    renderBucketList();
+                });
+            });
+            
+            if(openStudyPlanBtn) openStudyPlanBtn.addEventListener('click', openStudyPlanModal);
+            if(sidebarStudyPlanBtn) sidebarStudyPlanBtn.addEventListener('click', () => { closeSidebar(); openStudyPlanModal(); });
+            if(closeStudyPlanBtn) closeStudyPlanBtn.addEventListener('click', closeStudyPlanModal);
+            if(studyPlanModal) studyPlanModal.addEventListener('click', (e) => { if (e.target === studyPlanModal) closeStudyPlanModal(); });
+            
+            if(studyPlanForm) {
+                studyPlanForm.addEventListener('submit', handleStudyPlanSubmit);
+                studyPlanDateInput.addEventListener('change', updateStudyPlanPreview);
+                studyPlanTitleInput.addEventListener('input', updateStudyPlanPreview);
+            }
+
+            const aiGenerateBtn = document.getElementById('aiGenerateBtn');
+            const aiAnalyzeBtn = document.getElementById('aiAnalyzeBtn');
+            if(aiGenerateBtn) aiGenerateBtn.addEventListener('click', handleAIGenerateSchedule);
+            if(aiAnalyzeBtn) aiAnalyzeBtn.addEventListener('click', handleAIAnalyzeBalance);
+        }
+
+        async function fetchGeminiWithRetry(url, payload, maxRetries = 5) {
+            let delay = 1000;
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (response.ok) { return await response.json(); }
+                    if (response.status === 429 || response.status >= 500) {
+                        throw new Error(`伺服器錯誤: ${response.status}`);
+                    } else {
+                        const errorData = await response.json();
+                        throw new Error(errorData?.error?.message || `請求錯誤! 狀態碼: ${response.status}`);
+                    }
+                } catch (error) {
+                    if (i === maxRetries - 1) throw error;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
+                }
+            }
+        }
+
+        async function handleAIGenerateSchedule() {
+            const aiPromptInput = document.getElementById('aiPromptInput');
+            const aiGenerateBtn = document.getElementById('aiGenerateBtn');
+            const prompt = aiPromptInput.value.trim();
+            if (!prompt) { showToast('⚠️ 請先輸入你想規劃的主題目標喔！', 'warning'); return; }
+
+            const originalBtnHtml = aiGenerateBtn.innerHTML;
+            aiGenerateBtn.disabled = true;
+            aiGenerateBtn.innerHTML = `
+                <svg class="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>✨ 智慧排程計算中...</span>
+            `;
+
+            const dateStr = formatDateString(selectedDate);
+            const apiKey = ""; 
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: [{
+                    parts: [{
+                        text: `請為日期 ${dateStr} 生成 3 到 5 個圍繞主題「${prompt}」的合理、充實、符合時序邏輯的日程。必須使用繁體中文（zh-TW）填寫日程的 title 和 notes。分類 category 只能是 'work', 'personal', 'important', 'health' 四者之一。`
+                    }]
+                }],
+                systemInstruction: {
+                    parts: [{
+                        text: "你是一位精準且有效率的時間管理大師。你必須僅輸出符合指定 JSON Schema 的結構化 JSON 資料。日程的開始時間與結束時間格式必須為 HH:MM。請確保行程順序是按時間遞增的。"
+                    }]
+                },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            events: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        title: { type: "STRING", description: "行程名稱" },
+                                        startTime: { type: "STRING", description: "開始時間，格式 HH:MM，例如：09:00" },
+                                        endTime: { type: "STRING", description: "結束時間，格式 HH:MM，例如：10:30" },
+                                        category: { type: "STRING", enum: ["work", "personal", "important", "health"], description: "行程類別" },
+                                        notes: { type: "STRING", description: "詳細行程規劃與備註" }
+                                    },
+                                    required: ["title", "startTime", "endTime", "category"]
+                                }
+                            }
+                        },
+                        required: ["events"]
+                    }
+                }
+            };
+
+            try {
+                const result = await fetchGeminiWithRetry(url, payload);
+                const rawJsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!rawJsonText) throw new Error("AI 未能產出有效日程內容。");
+
+                const aiParsed = JSON.parse(rawJsonText);
+                if (aiParsed && Array.isArray(aiParsed.events) && aiParsed.events.length > 0) {
+                    aiParsed.events.forEach((ev, idx) => {
+                        events.push({
+                            id: (Date.now() + idx).toString(),
+                            title: ev.title, date: dateStr,
+                            idealStartTime: ev.startTime, idealEndTime: ev.endTime,
+                            actualStartTime: '', actualEndTime: '',
+                            category: ev.category, notes: ev.notes || ''
+                        });
+                    });
+
+                    saveAllData();
+                    renderCalendar();
+                    renderAgendaTimeline();
+                    
+                    showToast(`🎉 成功！AI 已為你寫入 ${aiParsed.events.length} 個行程`, 'success');
+                    aiPromptInput.value = '';
+
+                    setTimeout(() => { switchTab('agenda'); }, 800);
+                } else {
+                    showToast('⚠️ AI 產出了空日程，請換個主題再試試。', 'warning');
+                }
+            } catch (error) {
+                console.error(error);
+                showToast(`❌ 排程失敗: ${error.message}`, 'warning');
+            } finally {
+                aiGenerateBtn.disabled = false;
+                aiGenerateBtn.innerHTML = originalBtnHtml;
+            }
+        }
+
+        async function handleAIAnalyzeBalance() {
+            const aiAnalyzeBtn = document.getElementById('aiAnalyzeBtn');
+            const aiAnalysisResultContainer = document.getElementById('aiAnalysisResultContainer');
+            const aiAnalysisText = document.getElementById('aiAnalysisText');
+            
+            const currentMonthNum = currentDate.getMonth() + 1;
+            const currentYearNum = currentDate.getFullYear();
+            
+            const monthStrPrefix = `${currentYearNum}-${String(currentMonthNum).padStart(2, '0')}`;
+            const monthlyEvents = events.filter(e => e.date.startsWith(monthStrPrefix));
+
+            if (monthlyEvents.length === 0) {
+                showToast('⚠️ 本月目前沒有任何行程記錄，請先建立一些行程吧！', 'warning');
+                return;
+            }
+
+            const originalBtnHtml = aiAnalyzeBtn.innerHTML;
+            aiAnalyzeBtn.disabled = true;
+            aiAnalyzeBtn.innerHTML = `
+                <svg class="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>✨ AI 分析平衡中...</span>
+            `;
+
+            const eventsSummaryText = monthlyEvents.map(e => `- 日期: ${e.date}, 預定: ${e.idealStartTime}-${e.idealEndTime}, 標題: ${e.title}, 類別: ${e.category}`).join('\n');
+
+            const apiKey = "";
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+            const promptText = `
+以下是我在 ${currentYearNum} 年 ${currentMonthNum} 月份所有的行程明細：
+${eventsSummaryText}
+
+請根據這個月份的行程分類分佈（work代表工作，personal代表私人生活，important代表重要任務，health代表健康休閒），以一個睿智又親切的時間管理與生活平衡教練角色，提供繁體中文（zh-TW）的深度分析：
+1. 本月生活忙碌指數 (1-100分) 並給予一個簡短評語。
+2. 針對我的時間平衡度與健康配比，進行一兩段專業又暖心的分析。
+3. 提出 3 點極具可行性的生活微調建議，並用適當的 Emoji 點綴，排版需極簡流暢，適合在手機螢幕閱讀。
+`;
+
+            const payload = {
+                contents: [{ parts: [{ text: promptText }] }],
+                systemInstruction: {
+                    parts: [{
+                        text: "你是一位溫暖、敏銳且幽默的時間平衡分析師與健康生活導師。請一律使用繁體中文（zh-TW）回答，配合合適的 Emoji。回答格式要以簡潔的 Markdown 段落為主，不可包含程式碼框。"
+                    }]
+                }
+            };
+
+            aiAnalysisResultContainer.classList.remove('hidden');
+            aiAnalysisText.innerHTML = `
+                <div class="flex items-center gap-3 justify-center py-6 text-slate-400 dark:text-zinc-500">
+                    <svg class="animate-spin h-6 w-6 text-applePurple" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span class="text-sm font-bold">時間教練正在審閱你的行程...</span>
+                </div>
+            `;
+
+            try {
+                const result = await fetchGeminiWithRetry(url, payload);
+                const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!responseText) throw new Error("AI 教練正在午睡，沒有產出分析結果。");
+
+                let formattedHtml = responseText
+                    .replace(/\n/g, '<br>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong class="text-applePurple font-extrabold">$1</strong>')
+                    .replace(/-\s(.*?)<br>/g, '<li class="list-disc list-inside ml-2 text-slate-600 dark:text-zinc-300 my-1">$1</li>');
+
+                aiAnalysisText.innerHTML = `<div class="space-y-3 text-slate-700 dark:text-zinc-200">${formattedHtml}</div>`;
+                showToast('📊 月度平衡健康報告生成成功！', 'success');
+            } catch (error) {
+                console.error(error);
+                aiAnalysisText.innerHTML = `<span class="text-appleRed font-bold">❌ 分析出錯了: ${error.message}</span>`;
+                showToast(`❌ 分析出錯: ${error.message}`, 'warning');
+            } finally {
+                aiAnalyzeBtn.disabled = false;
+                aiAnalyzeBtn.innerHTML = originalBtnHtml;
+            }
+        }
+
+        function initTheme() {
+            const savedTheme = localStorage.getItem('desktop_calendar_theme') || 'dark';
+            if (savedTheme === 'light') {
+                document.documentElement.classList.remove('dark');
+                document.documentElement.classList.add('light');
+                document.getElementById('sunIcon').classList.add('hidden');
+                document.getElementById('moonIcon').classList.remove('hidden');
+            } else {
+                document.documentElement.classList.remove('light');
+                document.documentElement.classList.add('dark');
+                document.getElementById('sunIcon').classList.remove('hidden');
+                document.getElementById('moonIcon').classList.add('hidden');
+            }
+        }
+
+        function toggleTheme() {
+            if (document.documentElement.classList.contains('dark')) {
+                document.documentElement.classList.remove('dark');
+                document.documentElement.classList.add('light');
+                localStorage.setItem('desktop_calendar_theme', 'light');
+                document.getElementById('sunIcon').classList.add('hidden');
+                document.getElementById('moonIcon').classList.remove('hidden');
+                showToast('💡 已切換至明亮模式', 'success');
+            } else {
+                document.documentElement.classList.remove('light');
+                document.documentElement.classList.add('dark');
+                localStorage.setItem('desktop_calendar_theme', 'dark');
+                document.getElementById('sunIcon').classList.remove('hidden');
+                document.getElementById('moonIcon').classList.add('hidden');
+                showToast('🌙 已切換至深色模式', 'success');
+            }
+        }
+
+        function exportEvents() {
+            const dataToExport = { events, tasks, scores: dailyScores, habits, habitLogs, bucketItems, customTags };
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataToExport, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `calendar_backup_${formatDateString(new Date())}.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+            showToast('📤 備份匯出成功！', 'success');
+        }
+
+        function importEvents(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    const importedData = JSON.parse(evt.target.result);
+                    if (Array.isArray(importedData)) {
+                        events = importedData.map(ev => ({...ev, idealStartTime: ev.idealStartTime || ev.startTime, idealEndTime: ev.idealEndTime || ev.endTime}));
+                    } else if (importedData.events) {
+                        events = importedData.events;
+                        if(importedData.tasks) tasks = importedData.tasks;
+                        if(importedData.scores) dailyScores = importedData.scores;
+                        if(importedData.habits) habits = importedData.habits;
+                        if(importedData.habitLogs) habitLogs = importedData.habitLogs;
+                        if(importedData.bucketItems) bucketItems = importedData.bucketItems;
+                        if(importedData.customTags) customTags = importedData.customTags;
+                    }
+                    updateTagLabels();
+                    saveAllData();
+                    showToast('📥 備份資料匯入成功！', 'success');
+                    renderCalendar();
+                    renderAgendaTimeline();
+                    renderAgendaTasksAndScore();
+                    renderHabitGrid();
+                    renderBucketList();
+                    if(habits.length > 0) selectHabit(habits[0].id);
+                } catch (error) { showToast('❌ 無法解析檔案內容！', 'warning'); }
+            };
+            reader.readAsText(file);
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `px-4 py-3 rounded-xl shadow-2xl border border-slate-200/50 dark:border-zinc-800 text-sm font-bold flex items-center gap-2 transform translate-y-2 opacity-0 transition-all duration-300 bg-white/95 dark:bg-zinc-800/95 backdrop-blur-md`;
+            let statusDot = `<span class="w-2.5 h-2.5 rounded-full bg-appleBlue"></span>`;
+            if (type === 'warning') statusDot = `<span class="w-2.5 h-2.5 rounded-full bg-appleYellow"></span>`;
+            toast.innerHTML = `${statusDot} <span class="text-slate-700 dark:text-zinc-200">${message}</span>`;
+            document.getElementById('toastContainer').appendChild(toast);
+            setTimeout(() => { toast.classList.remove('translate-y-2', 'opacity-0'); }, 10);
+            setTimeout(() => {
+                toast.classList.add('translate-y-[-2px]', 'opacity-0');
+                setTimeout(() => { toast.remove(); }, 300);
+            }, 3000);
+        }
+
+        function formatDateString(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>
